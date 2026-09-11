@@ -1,0 +1,28 @@
+import { LEAF_PATH, LEAF_MIDRIB } from './shapes';
+
+const shadeClass = (s) => (s > 0.66 ? 'leaf-light' : s > 0.33 ? '' : 'leaf-dark');
+
+export function Leaves({ leaves }) {
+  return leaves.map((l, i) => (
+    <g key={i}
+       transform={`translate(${l.x} ${l.y}) rotate(${l.rot}) scale(${l.scale})`}
+       className={shadeClass(l.shade ?? 0.5)}>
+      <path d={LEAF_PATH} className="leaf" />
+      <path d={LEAF_MIDRIB} className="leaf-rib" />
+    </g>
+  ));
+}
+
+/** Twigs and their leaves, sprouting past the youngest generation. */
+export function Twigs({ sprigs }) {
+  return (
+    <g>
+      {sprigs.map((t, i) => (
+        <g key={i}>
+          <path d={t.d} className="limb-wood" />
+          <Leaves leaves={t.leaves} />
+        </g>
+      ))}
+    </g>
+  );
+}

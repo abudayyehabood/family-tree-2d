@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>شجرة العائلة</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <p style="padding:24px;font:16px system-ui">
+        هذه الصفحة تحتاج جافاسكربت. افتح الملف من متصفح (Safari أو Chrome) وليس من المعاينة.
+      </p>
+    </noscript>
+    <p id="boot" style="padding:24px;font:16px system-ui;line-height:1.6">
+      جارٍ فتح الشجرة… إن بقيت هذه الرسالة، افتح الملف داخل Safari أو Chrome مباشرة.
+    </p>
+    <script>
+      window.addEventListener('error', function (e) {
+        var b = document.getElementById('boot');
+        if (b) b.textContent = 'تعذر تشغيل الصفحة على هذا المتصفح: ' + (e.message || '');
+      });
+    </script>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
