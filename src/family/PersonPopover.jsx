@@ -7,8 +7,8 @@ import { S } from './strings';
  * Drag it by its head when it covers something you want to see.
  */
 export function PersonPopover({
-  person, isLeaf, spouses = [], mother = null, childCount, generation, pos,
-  onAddChild, onAddSpouse, onEdit, onRemove, onClose, canRemove,
+  person, isLeaf, isRoot = false, spouses = [], mother = null, childCount, generation, pos,
+  onAddChild, onAddAncestor, onAddSpouse, onEdit, onRemove, onClose, canRemove,
 }) {
   const [tab, setTab] = useState('child');
   const [name, setName] = useState('');
@@ -23,6 +23,8 @@ export function PersonPopover({
   const partnerWord = isWife ? S.wife : S.husband;
   // Someone who is themselves a wife does not get married again from here.
   const canMarry = !person.spouseOf && (isWife || spouses.length === 0);
+  // Only the topmost man can gain a father; everyone else already has one.
+  const canAddFather = isRoot && !person.spouseOf;
 
   useEffect(() => {
     setName(''); setBorn(''); setGender('m'); setTab('child');
@@ -59,6 +61,7 @@ export function PersonPopover({
     const fields = { name: name.trim(), born: born ? Number(born) : null };
     if (editing) { onEdit(person.id, { ...fields, gender }); setEditing(false); setName(''); setBorn(''); return; }
     if (tab === 'child') onAddChild(person.id, { ...fields, gender });
+    else if (tab === 'father') onAddAncestor(fields);
     else onAddSpouse(person.id, { ...fields, gender: person.gender === 'm' ? 'f' : 'm' });
     setName(''); setBorn('');
     inputRef.current?.focus();
@@ -85,16 +88,21 @@ export function PersonPopover({
         </span>
       </p>
 
-      {!editing && canMarry && (
+      {!editing && (canMarry || canAddFather) && (
         <div className="pop-tabs">
           <button type="button" className={tab === 'child' ? 'on' : ''} onClick={() => setTab('child')}>{S.child}</button>
-          <button type="button" className={tab === 'spouse' ? 'on' : ''} onClick={() => setTab('spouse')}>{partnerWord}</button>
+          {canMarry && (
+            <button type="button" className={tab === 'spouse' ? 'on' : ''} onClick={() => setTab('spouse')}>{partnerWord}</button>
+          )}
+          {canAddFather && (
+            <button type="button" className={tab === 'father' ? 'on' : ''} onClick={() => setTab('father')}>{S.father}</button>
+          )}
         </div>
       )}
 
       <form onSubmit={submit}>
         <input ref={inputRef} value={name} onChange={(e) => setName(e.target.value)}
-               placeholder={editing ? S.name : tab === 'child' ? S.childName : S.spouseName} />
+               placeholder={editing ? S.name : tab === 'child' ? S.childName : tab === 'father' ? S.fatherName : S.spouseName} />
         <div className="pop-row">
           <input className="yr" value={born} onChange={(e) => setBorn(e.target.value)} placeholder={S.born} inputMode="numeric" />
           {(editing || tab === 'child') && (
@@ -109,7 +117,9 @@ export function PersonPopover({
             ? S.saveEdit
             : tab === 'child'
               ? (gender === 'm' ? S.addSon : S.addDaughter)
-              : (isWife ? (spouses.length ? S.addAnotherWife : S.addWife) : S.addHusband)}
+              : tab === 'father'
+                ? S.addFather
+                : (isWife ? (spouses.length ? S.addAnotherWife : S.addWife) : S.addHusband)}
         </button>
       </form>
 

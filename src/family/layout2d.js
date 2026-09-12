@@ -8,9 +8,12 @@ export const TRUNK_H = 250;
 export const ROOT_Y = -14;
 const PAD = 90;
 
-const BRANCH_W0 = 20;
-const STEP0 = 152;
+const BRANCH_W0 = 34;            // the limbs that leave the trunk, good and thick
+const LIMB_DECAY = 0.78;         // how fast a limb thins with every generation
+const LIMB_MIN_W = 6;
+const STEP0 = 118;               // how far a generation steps out from the last
 const STEP_DECAY = 0.84;
+const GAP = 2 * NODE_R + 14;     // the closest two names may sit, edge to edge
 const FAN = Math.PI * 1.0;      // wide, so the canopy closes into a round crown
 
 function leafWeights(rootId, childrenOf) {
@@ -70,7 +73,13 @@ export function layoutTree(tree, childrenOf, spouseOf) {
 
     const weight = parent.weight;
     const total = kids.reduce((s, k) => s + weight.get(k), 0);
-    const r = radius + STEP0 * Math.pow(STEP_DECAY, parent.depth);
+
+    // The step is short, so the crown stays gathered instead of the names
+    // trailing off into long thin branches. It is pushed out only when this
+    // many children would not otherwise fit side by side at that distance.
+    const span = Math.abs(a1 - a0);
+    const tightest = Math.min(...kids.map((k) => (span * weight.get(k)) / total));
+    const r = Math.max(radius + STEP0 * Math.pow(STEP_DECAY, parent.depth), GAP / (tightest || 1));
 
     let cursor = a0;
     for (const kid of kids) {
@@ -85,7 +94,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
         x: origin.x + Math.cos(angle) * r,
         y: origin.y - Math.sin(angle) * r,
         angle, radius: r, weight,
-        w: Math.max(3.5, BRANCH_W0 * Math.pow(0.7, parent.depth)),
+        w: Math.max(LIMB_MIN_W, BRANCH_W0 * Math.pow(LIMB_DECAY, parent.depth)),
         r: NODE_R,
         isLeaf: (childrenOf.get(kid)?.length ?? 0) === 0,
       });

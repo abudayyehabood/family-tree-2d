@@ -85,6 +85,27 @@ export function useFamilyTree() {
     return id;
   }, []);
 
+  /**
+   * A generation older than anything on the tree. The new man becomes the root
+   * and the old root becomes his son, so the whole crown rises by one.
+   */
+  const addAncestor = useCallback((fields = {}) => {
+    const id = nextId();
+    setTree((t) => {
+      if (!t.rootId) return t;
+      const old = t.people[t.rootId];
+      return {
+        rootId: id,
+        people: {
+          ...t.people,
+          [old.id]: { ...old, parentId: id, motherId: null },
+          [id]: makePerson({ ...fields, gender: 'm' }, { id }),
+        },
+      };
+    });
+    return id;
+  }, []);
+
   const addSpouse = useCallback((personId, fields = {}) => {
     const id = nextId();
     setTree((t) => {
@@ -174,7 +195,7 @@ export function useFamilyTree() {
   return {
     tree, childrenOf, spouseOf,
     founderId: tree.rootId,
-    setRoot, addChild, addSpouse, updatePerson, removePerson, reset,
+    setRoot, addChild, addAncestor, addSpouse, updatePerson, removePerson, reset,
     saved, exportTree, importTree,
   };
 }

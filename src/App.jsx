@@ -23,6 +23,7 @@ export default function App() {
         selectedId={selectedId}
         onSelect={setSelectedId}
         onAddChild={t.addChild}
+        onAddAncestor={t.addAncestor}
         onAddSpouse={t.addSpouse}
         onEdit={t.updatePerson}
         onRemove={(id) => { t.removePerson(id); setSelectedId(t.founderId); }}

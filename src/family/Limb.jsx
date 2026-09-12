@@ -5,7 +5,7 @@ import { grainStrokes, hashNum, limbCurve, ribbon, twigsOn } from './shapes';
 export function Limb({ from, to }) {
   const { a, c, b } = limbCurve(from, to, inset(to));
   const w0 = from.w;
-  const w1 = Math.max(3.5, to.w * 0.82);
+  const w1 = Math.max(4.5, to.w * 0.86);
   const seed = hashNum(`${from.id}>${to.id}`);
   const rough = 0.16;
   const grain = w0 > 7 ? grainStrokes(a, c, b, w0, w1, seed, Math.min(7, Math.round(w0 / 2.6))) : [];

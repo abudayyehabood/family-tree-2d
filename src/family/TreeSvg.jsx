@@ -12,7 +12,7 @@ import { saveFile, useCanSave } from './saveFile';
 
 export function TreeSvg({
   tree, childrenOf, spouseOf, selectedId,
-  onSelect, onAddChild, onAddSpouse, onEdit, onRemove,
+  onSelect, onAddChild, onAddAncestor, onAddSpouse, onEdit, onRemove,
 }) {
   const svgRef = useRef(null);
   const gRef = useRef(null);
@@ -153,7 +153,9 @@ export function TreeSvg({
           generation={node.depth + 1}
           pos={pos}
           canRemove={node.id !== tree.rootId}
+          isRoot={node.id === tree.rootId}
           onAddChild={onAddChild}
+          onAddAncestor={onAddAncestor}
           onAddSpouse={onAddSpouse}
           onEdit={onEdit}
           onRemove={(id) => { setPopOpen(false); onRemove(id); }}
