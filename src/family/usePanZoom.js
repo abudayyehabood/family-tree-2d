@@ -4,6 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * Drag to pan, wheel or two fingers to zoom about the point you are holding.
  * Works in viewBox units.
  *
+ * Fingers are handled by raw touch events, not Pointer Events. Safari on iOS
+ * cancels a pointer the moment it thinks the page might scroll, which killed
+ * the drag halfway through; a touchmove that calls preventDefault cannot be
+ * taken away. Mouse and trackpad still come in through Pointer Events.
+ *
  * The crown is thousands of leaf paths, so re-rendering it on every finger
  * move is what made this crawl on an iPhone. During a gesture the transform is
  * written straight to the <g> element once per animation frame and React is
@@ -14,14 +19,26 @@ const MAX_K = 16;                 // close enough to read one branch on its own
 const clampK = (k) => Math.min(MAX_K, Math.max(MIN_K, k));
 const asTransform = (v) => `translate(${v.x} ${v.y}) scale(${v.k})`;
 
+/** WebKit gave SVG elements a classList only recently, so do it by hand. */
+function setClass(el, name, on) {
+  if (!el) return;
+  const current = el.getAttribute('class') || '';
+  const parts = current.split(/\s+/).filter((c) => c && c !== name);
+  if (on) parts.push(name);
+  el.setAttribute('class', parts.join(' '));
+}
+
 export function usePanZoom(svgRef, gRef, bounds, onGestureStart) {
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const live = useRef(view);              // the truth while fingers are down
   const frame = useRef(0);
   const settle = useRef(0);
   const drag = useRef(null);
-  const points = useRef(new Map());     // live fingers, for the pinch
   const pinch = useRef(null);
+
+  // kept in a ref so the touch listeners are bound once, not on every render
+  const gestureStart = useRef(onGestureStart);
+  gestureStart.current = onGestureStart;
 
   // one DOM write per frame, no React in the loop
   const paint = useCallback(() => {
@@ -37,7 +54,7 @@ export function usePanZoom(svgRef, gRef, bounds, onGestureStart) {
   const setMoving = useCallback((on) => {
     if (moving.current === on) return;
     moving.current = on;
-    svgRef.current?.classList.toggle('is-moving', on);
+    setClass(svgRef.current, 'is-moving', on);
   }, [svgRef]);
 
   /** Hand the view back to React, so the name card and the rest catch up. */
@@ -75,6 +92,21 @@ export function usePanZoom(svgRef, gRef, bounds, onGestureStart) {
     return { k, x: p.x - ((p.x - v.x) * k) / v.k, y: p.y - ((p.y - v.y) * k) / v.k };
   }, []);
 
+  const startDrag = useCallback((clientX, clientY) => {
+    const p = toUser(clientX, clientY);
+    drag.current = { x: p.x, y: p.y, vx: live.current.x, vy: live.current.y };
+  }, [toUser]);
+
+  const moveDrag = useCallback((clientX, clientY) => {
+    if (!drag.current) return;
+    const p = toUser(clientX, clientY);
+    move({
+      ...live.current,
+      x: drag.current.vx + (p.x - drag.current.x),
+      y: drag.current.vy + (p.y - drag.current.y),
+    });
+  }, [toUser, move]);
+
   const onWheel = useCallback((e) => {
     e.preventDefault();
     const p = toUser(e.clientX, e.clientY);
@@ -83,46 +115,78 @@ export function usePanZoom(svgRef, gRef, bounds, onGestureStart) {
     settle.current = setTimeout(commit, 140);
   }, [toUser, zoomAbout, move, commit]);
 
+  // ---- fingers: raw touch events, so iOS cannot take the gesture away ----
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+
+    const spread = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY) || 1;
+
+    // touchstart is never cancelled here: a cancelled one kills the tap that
+    // opens a person's card.
+    const down = (e) => {
+      const t = e.touches;
+      if (t.length === 1) {
+        pinch.current = null;
+        startDrag(t[0].clientX, t[0].clientY);
+      } else if (t.length >= 2) {
+        drag.current = null;
+        pinch.current = { dist: spread(t) };
+        gestureStart.current?.();    // the card is in the way, put it away
+      }
+    };
+
+    const moved = (e) => {
+      const t = e.touches;
+      if (t.length >= 2) {
+        if (!pinch.current) { pinch.current = { dist: spread(t) }; return; }
+        e.preventDefault();
+        const dist = spread(t);
+        const mid = toUser((t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2);
+        move(zoomAbout(mid, dist / pinch.current.dist));
+        pinch.current.dist = dist;
+        return;
+      }
+      if (t.length === 1 && drag.current) {
+        e.preventDefault();
+        moveDrag(t[0].clientX, t[0].clientY);
+      }
+    };
+
+    const up = (e) => {
+      const t = e.touches;
+      if (t.length < 2) pinch.current = null;
+      if (t.length === 1) startDrag(t[0].clientX, t[0].clientY);   // a finger lifted mid-pinch
+      if (t.length === 0) { drag.current = null; commit(); }
+    };
+
+    el.addEventListener('touchstart', down, { passive: false });
+    el.addEventListener('touchmove', moved, { passive: false });
+    el.addEventListener('touchend', up, { passive: false });
+    el.addEventListener('touchcancel', up, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', down);
+      el.removeEventListener('touchmove', moved);
+      el.removeEventListener('touchend', up);
+      el.removeEventListener('touchcancel', up);
+    };
+  }, [svgRef, startDrag, moveDrag, toUser, move, zoomAbout, commit]);
+
+  // ---- mouse and trackpad ----
   const onPointerDown = (e) => {
-    if (e.button !== 0) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    points.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-    if (points.current.size === 2) {          // two fingers: pinch, not drag
-      const [a, b] = [...points.current.values()];
-      drag.current = null;
-      pinch.current = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
-      onGestureStart?.();                     // the card is in the way, put it away
-      return;
-    }
-    drag.current = { ...toUser(e.clientX, e.clientY), vx: live.current.x, vy: live.current.y };
+    if (e.pointerType === 'touch' || e.button !== 0) return;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not fatal */ }
+    startDrag(e.clientX, e.clientY);
   };
-
   const onPointerMove = (e) => {
-    if (points.current.has(e.pointerId)) points.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-    if (pinch.current && points.current.size === 2) {
-      const [a, b] = [...points.current.values()];
-      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
-      const mid = toUser((a.x + b.x) / 2, (a.y + b.y) / 2);
-      move(zoomAbout(mid, dist / pinch.current.dist));
-      pinch.current.dist = dist;
-      return;
-    }
-    if (!drag.current) return;
-    const p = toUser(e.clientX, e.clientY);
-    const v = live.current;
-    move({ ...v, x: drag.current.vx + (p.x - drag.current.x), y: drag.current.vy + (p.y - drag.current.y) });
+    if (e.pointerType === 'touch') return;
+    moveDrag(e.clientX, e.clientY);
   };
-
   const onPointerUp = (e) => {
-    if (e?.pointerId != null) points.current.delete(e.pointerId);
-    else points.current.clear();
-    if (points.current.size < 2) pinch.current = null;
-    if (!points.current.size) {
-      drag.current = null;
-      commit();
-    }
+    if (e?.pointerType === 'touch') return;
+    if (!drag.current) return;
+    drag.current = null;
+    commit();
   };
 
   // non-passive wheel, otherwise preventDefault is ignored

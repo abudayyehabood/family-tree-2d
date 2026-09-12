@@ -92,7 +92,7 @@ export function TreeSvg({
   const savePoster = (kind) => {
     const svg = svgRef.current;
     const clone = svg.cloneNode(true);
-    clone.classList.remove('is-moving');       // a poster always gets the full detail
+    clone.setAttribute('class', (clone.getAttribute('class') || '').replace('is-moving', ''));  // a poster always gets the full detail
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     clone.setAttribute('width', Math.round(bounds.w));
     clone.setAttribute('height', Math.round(bounds.h));
