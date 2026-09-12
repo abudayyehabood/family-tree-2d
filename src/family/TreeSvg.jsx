@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NODE_R, layoutTree } from './layout2d';
 import { TREE_CSS } from './treeStyle';
 import { usePanZoom } from './usePanZoom';
@@ -23,13 +23,14 @@ export function TreeSvg({
     () => layoutTree(tree, childrenOf, spouseOf),
     [tree, childrenOf, spouseOf]
   );
-  const { transform, handlers, reset, zoomIn, zoomOut, focusOn } = usePanZoom(svgRef, bounds);
+  const { transform, handlers, reset, zoomIn, zoomOut, focusOn } =
+    usePanZoom(svgRef, gRef, bounds, () => setPopOpen(false));
 
   /** Double-click a name, or use the button, to blow up that corner of the tree. */
-  const focusPerson = (id) => {
+  const focusPerson = useCallback((id) => {
     const n = nodes.get(id);
     if (n) focusOn({ x: n.x, y: n.y }, 3.2);
-  };
+  }, [nodes, focusOn]);
 
   const node = popOpen ? nodes.get(selectedId) : null;
 
@@ -51,7 +52,32 @@ export function TreeSvg({
     setPos({ x, y });
   }, [node, node?.x, node?.y, transform, bounds]);
 
-  const pick = (id) => { onSelect(id); setPopOpen(true); };
+  const pick = useCallback((id) => { onSelect(id); setPopOpen(true); }, [onSelect]);
+
+  /**
+   * The crown is thousands of paths. Panning only changes the transform on the
+   * group, so the drawing itself is built once per tree and reused; without
+   * this React walks every leaf again on each frame.
+   */
+  const scene = useMemo(() => (
+    <>
+      <Foliage nodes={nodes} edges={edges} layer="back" />
+      <TrunkWood />
+      {edges.map(({ from, to }) => (
+        <Limb key={`${from}-${to}`} from={nodes.get(from)} to={nodes.get(to)} />
+      ))}
+      <Foliage nodes={nodes} edges={edges} layer="front" />
+      {marriages.map(({ a, b }) => (
+        <MarriageBar key={`${a}-${b}`} a={nodes.get(a)} b={nodes.get(b)} />
+      ))}
+      {[...nodes.values()]
+        .sort((a, b) => Number(Boolean(a.isFounder)) - Number(Boolean(b.isFounder)))
+        .map((n) => (
+          <PersonShape key={n.id} node={n} selected={n.id === selectedId}
+                       onSelect={pick} onFocus={focusPerson} />
+        ))}
+    </>
+  ), [nodes, edges, marriages, selectedId, pick, focusPerson]);
 
   // a click anywhere that is not the card itself puts the card away
   useEffect(() => {
@@ -66,6 +92,7 @@ export function TreeSvg({
   const savePoster = (kind) => {
     const svg = svgRef.current;
     const clone = svg.cloneNode(true);
+    clone.classList.remove('is-moving');       // a poster always gets the full detail
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     clone.setAttribute('width', Math.round(bounds.w));
     clone.setAttribute('height', Math.round(bounds.h));
@@ -110,23 +137,7 @@ export function TreeSvg({
         </defs>
         <rect x={bounds.x} y={bounds.y} width={bounds.w} height={bounds.h} className="paper" />
 
-        <g ref={gRef} transform={transform}>
-          <Foliage nodes={nodes} edges={edges} layer="back" />
-          <TrunkWood />
-          {edges.map(({ from, to }) => (
-            <Limb key={`${from}-${to}`} from={nodes.get(from)} to={nodes.get(to)} />
-          ))}
-          <Foliage nodes={nodes} edges={edges} layer="front" />
-          {marriages.map(({ a, b }) => (
-            <MarriageBar key={`${a}-${b}`} a={nodes.get(a)} b={nodes.get(b)} />
-          ))}
-          {[...nodes.values()]
-            .sort((a, b) => Number(Boolean(a.isFounder)) - Number(Boolean(b.isFounder)))
-            .map((n) => (
-              <PersonShape key={n.id} node={n} selected={n.id === selectedId}
-                           onSelect={pick} onFocus={focusPerson} />
-            ))}
-        </g>
+        <g ref={gRef} transform={transform}>{scene}</g>
       </svg>
 
       {node && pos && (

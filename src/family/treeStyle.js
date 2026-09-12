@@ -44,4 +44,16 @@ export const TREE_CSS = `
 .disc-year { font-size: 9px; fill: #6f6152; font-family: system-ui, sans-serif; }
 
 .marriage-line { stroke: #a5811f; stroke-width: 2.4; stroke-dasharray: 5 4; }
+
+/* While a finger is dragging or pinching, the drawing is re-rasterised every
+   frame. Eight thousand leaf veins and a blur pass are what made that crawl on
+   an iPhone, and none of that detail is readable mid-gesture anyway, so it is
+   dropped until the fingers lift. */
+.is-moving .leaf-vein, .is-moving .leaf-rib, .is-moving .grain,
+.is-moving .fissure, .is-moving .knot-core, .is-moving .speck { display: none; }
+.is-moving .foliage-back .clump-mass { filter: none; }
+/* the far leaves sit behind the dark mass, so dropping them mid-gesture costs
+   nothing a moving eye can see, and it is most of the drawing */
+.is-moving .foliage-back .leaf { display: none; }
+.is-moving .leaf { stroke: none; }
 `;
