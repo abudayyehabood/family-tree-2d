@@ -46,9 +46,26 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     });
   }
 
+  /**
+   * With two or three wives, the children of one mother are kept together in
+   * the fan, in the order the wives were added, so each household reads as one
+   * run of the crown instead of being interleaved.
+   */
+  const groupByMother = (parentId, kids) => {
+    const wives = spouseOf.get(parentId) ?? [];
+    if (wives.length < 2) return kids;
+    // The founder's wives sit to his left, first wife nearest him, so her
+    // children belong on the right of the fan or the limbs cross the trunk.
+    const ordered = nodes.get(parentId)?.isFounder ? [...wives].reverse() : wives;
+    const rank = new Map(ordered.map((w, i) => [w.id, i]));
+    return [...kids].sort(
+      (a, b) => (rank.get(tree.people[a].motherId) ?? -1) - (rank.get(tree.people[b].motherId) ?? -1)
+    );
+  };
+
   const walk = (id, origin, radius, a0, a1) => {
     const parent = nodes.get(id);
-    const kids = childrenOf.get(id) ?? [];
+    const kids = groupByMother(id, childrenOf.get(id) ?? []);
     if (!kids.length) return;
 
     const weight = parent.weight;
@@ -116,6 +133,19 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       marriages.push({ a: previous.id, b: spouse.id });
       previous = placed;
     });
+  }
+
+  // ---- a child of a second wife hangs off his mother, not off his father ----
+  // The layout is still built down the father's branch, because that is what
+  // carries the generations; only the limb is moved, so you can see at a glance
+  // which wife a person came from. With a single wife nothing changes.
+  for (const edge of edges) {
+    const child = tree.people[edge.to];
+    const mother = child?.motherId ? nodes.get(child.motherId) : null;
+    if (!mother || mother.partnerId !== edge.from) continue;
+    if ((spouseOf.get(edge.from)?.length ?? 0) < 2) continue;
+    mother.w = Math.max(mother.w, nodes.get(edge.from).w * 0.86);
+    edge.from = mother.id;
   }
 
   // ---- bounds ----
