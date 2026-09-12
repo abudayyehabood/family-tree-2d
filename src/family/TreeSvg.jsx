@@ -61,12 +61,11 @@ export function TreeSvg({
    */
   const scene = useMemo(() => (
     <>
-      <Foliage nodes={nodes} edges={edges} layer="back" />
       <TrunkWood />
       {edges.map(({ from, to }) => (
         <Limb key={`${from}-${to}`} from={nodes.get(from)} to={nodes.get(to)} />
       ))}
-      <Foliage nodes={nodes} edges={edges} layer="front" />
+      <Foliage nodes={nodes} />
       {marriages.map(({ a, b }) => (
         <MarriageBar key={`${a}-${b}`} a={nodes.get(a)} b={nodes.get(b)} />
       ))}
@@ -129,12 +128,6 @@ export function TreeSvg({
         onPointerDown={(e) => { setPopOpen(false); handlers.onPointerDown?.(e); }}
       >
         <style>{TREE_CSS}</style>
-        <defs>
-          {/* the far side of the canopy is out of focus, the way depth reads */}
-          <filter id="haze" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="7" />
-          </filter>
-        </defs>
         <rect x={bounds.x} y={bounds.y} width={bounds.w} height={bounds.h} className="paper" />
 
         <g ref={gRef} transform={transform}>{scene}</g>

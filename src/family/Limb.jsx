@@ -1,5 +1,5 @@
 import { inset } from './layout2d';
-import { grainStrokes, hashNum, limbCurve, ribbon, twigsOn } from './shapes';
+import { grainStrokes, hashNum, limbCurve, ribbon } from './shapes';
 
 /** A limb only exists because a person has a child. Wood, grain, and twigs. */
 export function Limb({ from, to }) {
@@ -9,7 +9,6 @@ export function Limb({ from, to }) {
   const seed = hashNum(`${from.id}>${to.id}`);
   const rough = 0.16;
   const grain = w0 > 7 ? grainStrokes(a, c, b, w0, w1, seed, Math.min(7, Math.round(w0 / 2.6))) : [];
-  const twigs = w0 > 6 ? twigsOn(a, c, b, w0, w1, seed) : [];
   // the lit side of the limb: the same curve, thinner, nudged off-centre
   const lift = { x: -w0 * 0.16, y: -w0 * 0.16 };
   const hi = ribbon(
@@ -21,7 +20,6 @@ export function Limb({ from, to }) {
 
   return (
     <g>
-      {twigs.map((t, i) => <path key={`t${i}`} d={t.d} className="limb-wood" />)}
       <path d={ribbon(a, c, b, w0, w1, 26, seed % 100, rough)} className="limb-wood" />
       {w0 > 6 && <path d={hi} className="wood-light" />}
       {grain.map((d, i) => <path key={`g${i}`} d={d} className="grain" />)}

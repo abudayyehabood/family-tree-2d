@@ -9,12 +9,6 @@ export const TREE_CSS = `
 .wood-light { fill: #6b4227; opacity: 0.6; }
 .fissure { fill: none; stroke: #2b1608; stroke-width: 2.6; stroke-linecap: round; opacity: 0.6; }
 .ground-shadow { fill: #6b6350; opacity: 0.1; }
-.clump-mass { fill: #2c6323; opacity: 0.42; }
-.foliage-back .clump-mass { filter: url(#haze); opacity: 0.5; }
-.foliage-back .leaf { opacity: 0.85; }
-.foliage-back .leaf-a { fill: #27591f; }
-.foliage-back .leaf-b { fill: #2d6a28; }
-.foliage-back .leaf-c { fill: #1d451a; }
 .grain { fill: none; stroke: #7b5030; stroke-width: 1.3; stroke-linecap: round; opacity: 0.8; }
 .knot { fill: #35200f; opacity: 0.75; }
 .knot-core { fill: #6d472c; opacity: 0.7; }
@@ -46,14 +40,9 @@ export const TREE_CSS = `
 .marriage-line { stroke: #a5811f; stroke-width: 2.4; stroke-dasharray: 5 4; }
 
 /* While a finger is dragging or pinching, the drawing is re-rasterised every
-   frame. Eight thousand leaf veins and a blur pass are what made that crawl on
-   an iPhone, and none of that detail is readable mid-gesture anyway, so it is
+   frame, and none of this fine detail is readable mid-gesture anyway, so it is
    dropped until the fingers lift. */
 .is-moving .leaf-vein, .is-moving .leaf-rib, .is-moving .grain,
 .is-moving .fissure, .is-moving .knot-core, .is-moving .speck { display: none; }
-.is-moving .foliage-back .clump-mass { filter: none; }
-/* the far leaves sit behind the dark mass, so dropping them mid-gesture costs
-   nothing a moving eye can see, and it is most of the drawing */
-.is-moving .foliage-back .leaf { display: none; }
 .is-moving .leaf { stroke: none; }
 `;

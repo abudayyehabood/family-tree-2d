@@ -6,12 +6,12 @@ export const TRUNK_TOP_W = 40;
 export const TRUNK_BASE_W = 104;
 export const TRUNK_H = 250;
 export const ROOT_Y = -14;
-const PAD = 90;
+const PAD = 56;
 
 const BRANCH_W0 = 34;            // the limbs that leave the trunk, good and thick
 const LIMB_DECAY = 0.78;         // how fast a limb thins with every generation
 const LIMB_MIN_W = 6;
-const STEP0 = 118;               // how far a generation steps out from the last
+const STEP0 = 94;                // how far a generation steps out from the last
 const STEP_DECAY = 0.84;
 const GAP = 2 * NODE_R + 14;     // the closest two names may sit, edge to edge
 const FAN = Math.PI * 1.0;      // wide, so the canopy closes into a round crown
@@ -66,6 +66,20 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     );
   };
 
+  /**
+   * How far a man's wives stick out past him along his own branch. His children
+   * have to start beyond that, or the next ring lands on top of the wives.
+   */
+  const spouseReach = (id) => {
+    const wives = spouseOf.get(id) ?? [];
+    const node = nodes.get(id);
+    if (!wives.length || node?.isFounder) return 0;   // the founder's wives go sideways
+    let reach = 0;
+    let prev = node?.r ?? NODE_R;
+    for (let i = 0; i < wives.length; i++) { reach += prev + SPOUSE_R + 6; prev = SPOUSE_R; }
+    return reach;
+  };
+
   const walk = (id, origin, radius, a0, a1) => {
     const parent = nodes.get(id);
     const kids = groupByMother(id, childrenOf.get(id) ?? []);
@@ -79,7 +93,11 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     // many children would not otherwise fit side by side at that distance.
     const span = Math.abs(a1 - a0);
     const tightest = Math.min(...kids.map((k) => (span * weight.get(k)) / total));
-    const r = Math.max(radius + STEP0 * Math.pow(STEP_DECAY, parent.depth), GAP / (tightest || 1));
+    const r = Math.max(
+      radius + STEP0 * Math.pow(STEP_DECAY, parent.depth),
+      GAP / (tightest || 1),
+      radius + spouseReach(id) + NODE_R + 14
+    );
 
     let cursor = a0;
     for (const kid of kids) {
@@ -160,7 +178,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   // ---- bounds ----
   let minX = -300, maxX = 300, minY = ROOT_Y - 60, maxY = ROOT_Y + TRUNK_H + 110;
   for (const n of nodes.values()) {
-    const r = (n.r || NODE_R) + 34;      // leave room for the foliage
+    const r = (n.r || NODE_R) + 14;     // a person's tuft of leaves, nothing more
     minX = Math.min(minX, n.x - r);
     maxX = Math.max(maxX, n.x + r);
     minY = Math.min(minY, n.y - r);
