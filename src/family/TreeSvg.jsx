@@ -19,7 +19,7 @@ export function TreeSvg({
   const [popOpen, setPopOpen] = useState(false);
   const [pos, setPos] = useState(null);
 
-  const { nodes, edges, marriages, bounds } = useMemo(
+  const { nodes, edges, marriages, bounds, trunk } = useMemo(
     () => layoutTree(tree, childrenOf, spouseOf),
     [tree, childrenOf, spouseOf]
   );
@@ -61,7 +61,7 @@ export function TreeSvg({
    */
   const scene = useMemo(() => (
     <>
-      <TrunkWood />
+      <TrunkWood trunk={trunk} />
       {edges.map(({ from, to }) => (
         <Limb key={`${from}-${to}`} from={nodes.get(from)} to={nodes.get(to)} />
       ))}
@@ -76,7 +76,7 @@ export function TreeSvg({
                        onSelect={pick} onFocus={focusPerson} />
         ))}
     </>
-  ), [nodes, edges, marriages, selectedId, pick, focusPerson]);
+  ), [nodes, edges, marriages, trunk, selectedId, pick, focusPerson]);
 
   // a click anywhere that is not the card itself puts the card away
   useEffect(() => {

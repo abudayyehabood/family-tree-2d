@@ -8,7 +8,8 @@ export const TRUNK_H = 250;
 export const ROOT_Y = -14;
 const PAD = 56;
 
-const ROW_H = 122;               // one generation straight up from the last
+const ROW_H = 128;               // one generation straight up from the last
+const ROW_MAX = 320;             // a wide family needs tall rows or it goes flat
 const H_GAP = 22;                // clear air between two households side by side
 const BRANCH_W0 = 30;            // the limbs that leave the trunk, good and thick
 const LIMB_DECAY = 0.8;          // how fast a limb thins with every generation
@@ -27,9 +28,11 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   const marriages = [];
   const rootId = tree.rootId && tree.people[tree.rootId] ? tree.rootId : null;
 
+  const trunk = { h: TRUNK_H, baseW: TRUNK_BASE_W, topW: TRUNK_TOP_W };
+
   if (!rootId) {
     return {
-      nodes, edges, marriages, rootId,
+      nodes, edges, marriages, rootId, trunk,
       bounds: { x: -300 - PAD, y: ROOT_Y - 60 - PAD, w: 600 + PAD * 2, h: TRUNK_H + 170 + PAD },
     };
   }
@@ -68,7 +71,21 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     width.set(id, w);
     return w;
   };
-  measure(rootId);
+  const crownW = measure(rootId);
+
+  // How deep the family goes, so the rows can be spaced against its breadth.
+  const depthOf = (id) => 1 + Math.max(0, ...kidsOf(id).map(depthOf));
+  const rows = depthOf(rootId);
+
+  // A wide family drawn on short rows spreads out flat and stops looking like
+  // a tree, so the rows grow taller as the crown grows wider.
+  const rowH = Math.min(ROW_MAX, Math.max(ROW_H, crownW / (rows * 1.5)));
+
+  // The trunk carries the crown, so it is cut to its size: a thin pole under a
+  // wide canopy, or a heavy bole under a narrow one, both read as wrong.
+  trunk.baseW = Math.min(240, Math.max(84, crownW * 0.085));
+  trunk.topW = trunk.baseW * 0.42;
+  trunk.h = Math.min(460, Math.max(210, crownW * 0.2));
 
   // ---- then hand every subtree its own stretch of that floor ----
   const place = (id, left, depth) => {
@@ -78,7 +95,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const node = {
       id, person: tree.people[id], depth,
       x: centre - blockW(id) / 2 + r,
-      y: ROOT_Y + (id === rootId ? GOLD_R - 4 : 0) - depth * ROW_H,
+      y: ROOT_Y + (id === rootId ? GOLD_R - 4 : 0) - depth * rowH,
       angle: UP, r,
       w: Math.max(LIMB_MIN_W, BRANCH_W0 * Math.pow(LIMB_DECAY, depth)),
       isFounder: id === rootId,
@@ -129,7 +146,8 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   }
 
   // ---- bounds ----
-  let minX = -300, maxX = 300, minY = ROOT_Y - 60, maxY = ROOT_Y + TRUNK_H + 110;
+  const half = trunk.baseW * 2.6;
+  let minX = -half, maxX = half, minY = ROOT_Y - 60, maxY = ROOT_Y + trunk.h + trunk.baseW * 0.9;
   for (const n of nodes.values()) {
     const r = (n.r || NODE_R) + 14;     // a person's tuft of leaves, nothing more
     minX = Math.min(minX, n.x - r);
@@ -139,7 +157,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   }
 
   return {
-    nodes, edges, marriages, rootId,
+    nodes, edges, marriages, rootId, trunk,
     bounds: { x: minX - PAD, y: minY - PAD, w: (maxX - minX) + PAD * 2, h: (maxY - minY) + PAD },
   };
 }

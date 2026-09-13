@@ -10,17 +10,34 @@ const qTangent = (a, c, b, t) => {
   return { x: 2 * u * (c.x - a.x) + 2 * t * (b.x - c.x),
            y: 2 * u * (c.y - a.y) + 2 * t * (b.y - c.y) };
 };
+const cPoint = (a, c1, c2, b, t) => {
+  const u = 1 - t;
+  return { x: u * u * u * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * b.x,
+           y: u * u * u * a.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * b.y };
+};
+const cTangent = (a, c1, c2, b, t) => {
+  const u = 1 - t;
+  return { x: 3 * u * u * (c1.x - a.x) + 6 * u * t * (c2.x - c1.x) + 3 * t * t * (b.x - c2.x),
+           y: 3 * u * u * (c1.y - a.y) + 6 * u * t * (c2.y - c1.y) + 3 * t * t * (b.y - c2.y) };
+};
+
+/** One curve, whether it was drawn with three points or four. */
+export function curveOf(p) {
+  return p.length === 3
+    ? { at: (t) => qPoint(p[0], p[1], p[2], t), dir: (t) => qTangent(p[0], p[1], p[2], t) }
+    : { at: (t) => cPoint(p[0], p[1], p[2], p[3], t), dir: (t) => cTangent(p[0], p[1], p[2], p[3], t) };
+}
 
 /**
  * A limb is a filled ribbon, not a stroke: strokes cannot taper, and the
  * taper from thick elder to thin twig is the whole look.
  */
-export function ribbon(a, c, b, w0, w1, steps = 18, seed = 0, rough = 0) {
+export function ribbonOn(curve, w0, w1, steps = 18, seed = 0, rough = 0) {
   const left = [], right = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    const p = qPoint(a, c, b, t);
-    const d = qTangent(a, c, b, t);
+    const p = curve.at(t);
+    const d = curve.dir(t);
     const len = Math.hypot(d.x, d.y) || 1;
     const nx = -d.y / len, ny = d.x / len;
     const w = (w0 + (w1 - w0) * (t * t * (3 - 2 * t))) / 2; // smoothstep taper
@@ -33,15 +50,23 @@ export function ribbon(a, c, b, w0, w1, steps = 18, seed = 0, rough = 0) {
   return `M ${left.join(' L ')} L ${right.reverse().join(' L ')} Z`;
 }
 
-export const qAt = qPoint;
-export const qDir = qTangent;
+export const ribbon = (a, c, b, w0, w1, steps, seed, rough) =>
+  ribbonOn(curveOf([a, c, b]), w0, w1, steps, seed, rough);
 
-/** Control point that bows a limb outward along the parent's own heading. */
-export function limbControl(from, to) {
-  const dx = to.x - from.x, dy = to.y - from.y;
-  const dist = Math.hypot(dx, dy);
-  const ax = Math.cos(from.angle), ay = -Math.sin(from.angle);
-  return { x: from.x + ax * dist * 0.5 + dx * 0.16, y: from.y + ay * dist * 0.5 + dy * 0.16 };
+/**
+ * The shape of a branch: it leaves its father growing straight up, bends over,
+ * and comes into the child growing straight up again. That fork is what makes
+ * wood read as wood; a limb aimed straight at the child reads as a cable.
+ */
+export function limbCurve(from, to, off) {
+  const a = { x: from.x, y: from.y };
+  const b = { x: to.x, y: to.y + off };
+  const rise = Math.max(40, a.y - b.y);
+  const dx = b.x - a.x;
+  return [a,
+    { x: a.x + dx * 0.42, y: a.y - rise * 0.5 },   // out of the father, up and away
+    { x: b.x, y: b.y + rise * 0.62 },              // into the child, straight up
+    b];
 }
 
 function mulberry32(seed) {
@@ -51,46 +76,6 @@ function mulberry32(seed) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-/** The three points of a limb, shared by the wood and the leaves on it. */
-export function limbCurve(from, to, off) {
-  const b = { x: to.x - Math.cos(to.angle) * off, y: to.y + Math.sin(to.angle) * off };
-  return { a: from, c: limbControl(from, { ...b, angle: to.angle }), b };
-}
-
-export function trunkPath() {
-  const top = ROOT_Y;
-  const bottom = ROOT_Y + TRUNK_H;
-  return ribbon(
-    { x: 0, y: bottom }, { x: 9, y: (top + bottom) / 2 }, { x: 0, y: top },
-    TRUNK_BASE_W, TRUNK_TOP_W, 48, 3.1, 0.09
-  );
-}
-
-/** Root flare at the foot of the trunk. */
-export function rootPaths() {
-  const y = ROOT_Y + TRUNK_H;
-  const spread = [-1, -0.78, -0.55, -0.32, -0.15, 0.15, 0.32, 0.55, 0.78, 1];
-  return spread.map((s, i) => {
-    const len = 62 + (i % 4) * 44;
-    const a = { x: s * 14, y: y - 40 };
-    const b = { x: s * (68 + len * 0.7), y: y + 26 + (i % 2) * 8 };
-    const c = { x: s * 40, y: y + 18 };
-    return ribbon(a, c, b, 30 - Math.abs(s) * 9, 2.2, 20, i * 2.3, 0.16);
-  });
-}
-
-/** Loose earth at the foot of the trunk. */
-export function groundSpecks() {
-  const rnd = mulberry32(97531);
-  const y = ROOT_Y + TRUNK_H;
-  return Array.from({ length: 46 }, () => ({
-    x: (rnd() - 0.5) * 430,
-    y: y + 14 + rnd() * 26,
-    rx: 2 + rnd() * 7,
-    ry: 1 + rnd() * 2.4,
-  }));
 }
 
 /** Stable numeric seed from any string. */
@@ -104,7 +89,7 @@ export function hashNum(str) {
  * Wood grain: thin lines that ride inside a limb, parallel to it. This is what
  * makes sawn wood read as wood instead of a brown noodle.
  */
-export function grainStrokes(a, c, b, w0, w1, seed, count) {
+export function grainOn(curve, w0, w1, seed, count) {
   const rnd = mulberry32(seed);
   const out = [];
   for (let k = 0; k < count; k++) {
@@ -115,8 +100,8 @@ export function grainStrokes(a, c, b, w0, w1, seed, count) {
     const pts = [];
     for (let i = 0; i <= steps; i++) {
       const t = t0 + ((t1 - t0) * i) / steps;
-      const p = qAt(a, c, b, t);
-      const d = qDir(a, c, b, t);
+      const p = curve.at(t);
+      const d = curve.dir(t);
       const len = Math.hypot(d.x, d.y) || 1;
       const nx = -d.y / len, ny = d.x / len;
       const w = (w0 + (w1 - w0) * (t * t * (3 - 2 * t))) / 2;
@@ -128,21 +113,60 @@ export function grainStrokes(a, c, b, w0, w1, seed, count) {
   return out;
 }
 
-const TRUNK_A = { x: 0, y: ROOT_Y + TRUNK_H };
-const TRUNK_C = { x: 9, y: ROOT_Y + TRUNK_H / 2 };
-const TRUNK_B = { x: 0, y: ROOT_Y };
+/* ---- the trunk. Its size comes from the crown it has to carry. ---- */
+const bole = (t) => ({
+  a: { x: 0, y: ROOT_Y + t.h },
+  c: { x: 9, y: ROOT_Y + t.h / 2 },
+  b: { x: 0, y: ROOT_Y },
+});
+export const TRUNK = { h: TRUNK_H, baseW: TRUNK_BASE_W, topW: TRUNK_TOP_W };
 
-export function trunkGrain() {
-  return grainStrokes(TRUNK_A, TRUNK_C, TRUNK_B, TRUNK_BASE_W, TRUNK_TOP_W, 24680, 34);
+export function trunkPath(t = TRUNK) {
+  const { a, c, b } = bole(t);
+  return ribbon(a, c, b, t.baseW, t.topW, 48, 3.1, 0.09);
+}
+
+/** Root flare at the foot of the trunk. */
+export function rootPaths(t = TRUNK) {
+  const y = ROOT_Y + t.h;
+  const scale = t.baseW / TRUNK_BASE_W;
+  const spread = [-1, -0.78, -0.55, -0.32, -0.15, 0.15, 0.32, 0.55, 0.78, 1];
+  return spread.map((s, i) => {
+    const len = (62 + (i % 4) * 44) * scale;
+    const a = { x: s * 14 * scale, y: y - 40 * scale };
+    const b = { x: s * (68 * scale + len * 0.7), y: y + 26 * scale + (i % 2) * 8 };
+    const c = { x: s * 40 * scale, y: y + 18 * scale };
+    return ribbon(a, c, b, (30 - Math.abs(s) * 9) * scale, 2.2, 20, i * 2.3, 0.16);
+  });
+}
+
+/** Loose earth at the foot of the trunk. */
+export function groundSpecks(t = TRUNK) {
+  const rnd = mulberry32(97531);
+  const scale = t.baseW / TRUNK_BASE_W;
+  const y = ROOT_Y + t.h;
+  return Array.from({ length: 46 }, () => ({
+    x: (rnd() - 0.5) * 430 * scale,
+    y: y + 14 * scale + rnd() * 26,
+    rx: 2 + rnd() * 7,
+    ry: 1 + rnd() * 2.4,
+  }));
+}
+
+export function trunkGrain(t = TRUNK) {
+  const { a, c, b } = bole(t);
+  return grainOn(curveOf([a, c, b]), t.baseW, t.topW, 24680, 34);
 }
 
 /** Old scars on the trunk, where a branch was lost long ago. */
-export function trunkKnots() {
+export function trunkKnots(t = TRUNK) {
+  const { a, c, b } = bole(t);
+  const curve = curveOf([a, c, b]);
   const rnd = mulberry32(1357);
   return Array.from({ length: 3 }, (_, i) => {
-    const t = 0.22 + i * 0.26 + rnd() * 0.06;
-    const p = qAt(TRUNK_A, TRUNK_C, TRUNK_B, t);
-    const w = (TRUNK_BASE_W + (TRUNK_TOP_W - TRUNK_BASE_W) * t) / 2;
+    const at = 0.22 + i * 0.26 + rnd() * 0.06;
+    const p = curve.at(at);
+    const w = (t.baseW + (t.topW - t.baseW) * at) / 2;
     return {
       x: p.x + (rnd() - 0.5) * w * 0.9,
       y: p.y,
@@ -153,26 +177,10 @@ export function trunkKnots() {
   });
 }
 
-/** Bare side twigs, so a limb is not a single clean stroke. */
-export function twigsOn(a, c, b, w0, w1, seed) {
-  const rnd = mulberry32(seed);
-  return [0.4, 0.66].map((t, k) => {
-    const p = qAt(a, c, b, t);
-    const d = qDir(a, c, b, t);
-    const len = Math.hypot(d.x, d.y) || 1;
-    const ux = d.x / len, uy = d.y / len;
-    const side = k % 2 === 0 ? 1 : -1;
-    const nx = -uy * side, ny = ux * side;
-    const w = w0 + (w1 - w0) * t;
-    const reach = 26 + rnd() * 26;
-    const tip = { x: p.x + nx * reach + ux * reach * 0.5, y: p.y + ny * reach + uy * reach * 0.5 };
-    const ctl = { x: p.x + nx * reach * 0.5 + ux * reach * 0.1, y: p.y + ny * reach * 0.5 + uy * reach * 0.1 };
-    return { d: ribbon(p, ctl, tip, Math.max(2.4, w * 0.5), 1.2, 8), tip, ang: Math.atan2(tip.y - p.y, tip.x - p.x) };
-  });
-}
-
 /** Deep bark fissures: darker, longer, fewer than the fine grain. */
-export function trunkFissures() {
+export function trunkFissures(t = TRUNK) {
+  const { a, c, b } = bole(t);
+  const curve = curveOf([a, c, b]);
   const rnd = mulberry32(8642);
   const out = [];
   for (let k = 0; k < 9; k++) {
@@ -182,10 +190,10 @@ export function trunkFissures() {
     const steps = 12;
     const pts = [];
     for (let i = 0; i <= steps; i++) {
-      const t = t0 + ((t1 - t0) * i) / steps;
-      const p = qAt(TRUNK_A, TRUNK_C, TRUNK_B, t);
-      const w = (TRUNK_BASE_W + (TRUNK_TOP_W - TRUNK_BASE_W) * t) / 2;
-      const off = (f + Math.sin(t * 6 + k) * 0.12) * w;
+      const at = t0 + ((t1 - t0) * i) / steps;
+      const p = curve.at(at);
+      const w = (t.baseW + (t.topW - t.baseW) * at) / 2;
+      const off = (f + Math.sin(at * 6 + k) * 0.12) * w;
       pts.push(`${(p.x + off).toFixed(1)} ${p.y.toFixed(1)}`);
     }
     out.push(`M ${pts.join(' L ')}`);
@@ -194,9 +202,9 @@ export function trunkFissures() {
 }
 
 /** The lit edge of a round trunk, so it stops reading as a flat cut-out. */
-export function trunkHighlight() {
-  const a = { x: -TRUNK_BASE_W * 0.3, y: TRUNK_A.y - 20 };
-  const b = { x: -TRUNK_TOP_W * 0.26, y: TRUNK_B.y + 10 };
-  const c = { x: -TRUNK_BASE_W * 0.24, y: (a.y + b.y) / 2 };
-  return ribbon(a, c, b, TRUNK_BASE_W * 0.2, TRUNK_TOP_W * 0.16, 20, 5.5, 0.12);
+export function trunkHighlight(t = TRUNK) {
+  const a = { x: -t.baseW * 0.3, y: ROOT_Y + t.h - 20 };
+  const b = { x: -t.topW * 0.26, y: ROOT_Y + 10 };
+  const c = { x: -t.baseW * 0.24, y: (a.y + b.y) / 2 };
+  return ribbon(a, c, b, t.baseW * 0.2, t.topW * 0.16, 20, 5.5, 0.12);
 }
