@@ -8,30 +8,18 @@ export const TRUNK_H = 250;
 export const ROOT_Y = -14;
 const PAD = 56;
 
-const BRANCH_W0 = 34;            // the limbs that leave the trunk, good and thick
-const LIMB_DECAY = 0.78;         // how fast a limb thins with every generation
+const ROW_H = 122;               // one generation straight up from the last
+const H_GAP = 22;                // clear air between two households side by side
+const BRANCH_W0 = 30;            // the limbs that leave the trunk, good and thick
+const LIMB_DECAY = 0.8;          // how fast a limb thins with every generation
 const LIMB_MIN_W = 6;
-const STEP0 = 94;                // how far a generation steps out from the last
-const STEP_DECAY = 0.84;
-const GAP = 2 * NODE_R + 14;     // the closest two names may sit, edge to edge
-const FAN = Math.PI * 1.0;      // wide, so the canopy closes into a round crown
-
-function leafWeights(rootId, childrenOf) {
-  const w = new Map();
-  const visit = (id) => {
-    const kids = childrenOf.get(id) ?? [];
-    const n = kids.length ? kids.reduce((s, k) => s + visit(k), 0) : 1;
-    w.set(id, n);
-    return n;
-  };
-  visit(rootId);
-  return w;
-}
+const UP = Math.PI / 2;          // every limb climbs; nothing fans sideways
 
 /**
- * The crown hangs off the trunk. The highest named ancestor carries the big
- * round canopy; anyone lower who has children throws a side branch at their
- * own height.
+ * The crown is built in rows, one row per generation, climbing off the trunk.
+ * A man and his wives stand together in their row and their children sit in
+ * the row above, centred on the household. Nobody ever shares a column with a
+ * cousin, so no two limbs can cross and no name drifts far from its father.
  */
 export function layoutTree(tree, childrenOf, spouseOf) {
   const nodes = new Map();
@@ -39,138 +27,103 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   const marriages = [];
   const rootId = tree.rootId && tree.people[tree.rootId] ? tree.rootId : null;
 
-  if (rootId) {
-    const hasWife = (spouseOf.get(rootId)?.length ?? 0) > 0;
-    nodes.set(rootId, {
-      id: rootId, person: tree.people[rootId], depth: 0,
-      x: hasWife ? GOLD_R + 6 : 0, y: ROOT_Y + GOLD_R - 4,
-      angle: Math.PI / 2, radius: 0, w: BRANCH_W0, r: GOLD_R,
-      isFounder: true, isLeaf: (childrenOf.get(rootId)?.length ?? 0) === 0,
-    });
+  if (!rootId) {
+    return {
+      nodes, edges, marriages, rootId,
+      bounds: { x: -300 - PAD, y: ROOT_Y - 60 - PAD, w: 600 + PAD * 2, h: TRUNK_H + 170 + PAD },
+    };
   }
 
+  const discR = (id) => (id === rootId ? GOLD_R : NODE_R);
+  const wivesOf = (id) => spouseOf.get(id) ?? [];
+  const wifeR = (id) => (id === rootId ? GOLD_R : SPOUSE_R);
+
   /**
-   * With two or three wives, the children of one mother are kept together in
-   * the fan, in the order the wives were added, so each household reads as one
-   * run of the crown instead of being interleaved.
+   * With two or three wives, the children of one mother are kept together and
+   * in the order the wives were married, so each household reads as one run of
+   * the row instead of being interleaved with her co-wife's children.
    */
-  const groupByMother = (parentId, kids) => {
-    const wives = spouseOf.get(parentId) ?? [];
+  const kidsOf = (id) => {
+    const kids = childrenOf.get(id) ?? [];
+    const wives = wivesOf(id);
     if (wives.length < 2) return kids;
-    // The founder's wives sit to his left, first wife nearest him, so her
-    // children belong on the right of the fan or the limbs cross the trunk.
-    const ordered = nodes.get(parentId)?.isFounder ? [...wives].reverse() : wives;
-    const rank = new Map(ordered.map((w, i) => [w.id, i]));
+    const rank = new Map(wives.map((w, i) => [w.id, i]));
     return [...kids].sort(
       (a, b) => (rank.get(tree.people[a].motherId) ?? -1) - (rank.get(tree.people[b].motherId) ?? -1)
     );
   };
 
-  /**
-   * How far a man's wives stick out past him along his own branch. His children
-   * have to start beyond that, or the next ring lands on top of the wives.
-   */
-  const spouseReach = (id) => {
-    const wives = spouseOf.get(id) ?? [];
-    const node = nodes.get(id);
-    if (!wives.length || node?.isFounder) return 0;   // the founder's wives go sideways
-    let reach = 0;
-    let prev = node?.r ?? NODE_R;
-    for (let i = 0; i < wives.length; i++) { reach += prev + SPOUSE_R + 6; prev = SPOUSE_R; }
-    return reach;
+  /** How wide a man and all his wives stand, shoulder to shoulder. */
+  const blockW = (id) =>
+    2 * discR(id) + wivesOf(id).reduce((s) => s + 2 * wifeR(id) + 8, 0);
+
+  // ---- how much floor each subtree needs, measured from the leaves down ----
+  const width = new Map();
+  const measure = (id) => {
+    const kids = kidsOf(id);
+    const below = kids.length
+      ? kids.reduce((s, k) => s + measure(k), 0) + H_GAP * (kids.length - 1)
+      : 0;
+    const w = Math.max(blockW(id), below);
+    width.set(id, w);
+    return w;
   };
+  measure(rootId);
 
-  const walk = (id, origin, radius, a0, a1) => {
-    const parent = nodes.get(id);
-    const kids = groupByMother(id, childrenOf.get(id) ?? []);
-    if (!kids.length) return;
+  // ---- then hand every subtree its own stretch of that floor ----
+  const place = (id, left, depth) => {
+    const w = width.get(id);
+    const centre = left + w / 2;
+    const r = discR(id);
+    const node = {
+      id, person: tree.people[id], depth,
+      x: centre - blockW(id) / 2 + r,
+      y: ROOT_Y + (id === rootId ? GOLD_R - 4 : 0) - depth * ROW_H,
+      angle: UP, r,
+      w: Math.max(LIMB_MIN_W, BRANCH_W0 * Math.pow(LIMB_DECAY, depth)),
+      isFounder: id === rootId,
+      isLeaf: (childrenOf.get(id) ?? []).length === 0,
+    };
+    nodes.set(id, node);
 
-    const weight = parent.weight;
-    const total = kids.reduce((s, k) => s + weight.get(k), 0);
-
-    // The step is short, so the crown stays gathered instead of the names
-    // trailing off into long thin branches. It is pushed out only when this
-    // many children would not otherwise fit side by side at that distance.
-    const span = Math.abs(a1 - a0);
-    const tightest = Math.min(...kids.map((k) => (span * weight.get(k)) / total));
-    const r = Math.max(
-      radius + STEP0 * Math.pow(STEP_DECAY, parent.depth),
-      GAP / (tightest || 1),
-      radius + spouseReach(id) + NODE_R + 14
-    );
-
-    let cursor = a0;
-    for (const kid of kids) {
-      const span = ((a1 - a0) * weight.get(kid)) / total;
-      const angle = cursor + span / 2;
-      cursor += span;
-
-      nodes.set(kid, {
-        id: kid,
-        person: tree.people[kid],
-        depth: parent.depth + 1,
-        x: origin.x + Math.cos(angle) * r,
-        y: origin.y - Math.sin(angle) * r,
-        angle, radius: r, weight,
-        w: Math.max(LIMB_MIN_W, BRANCH_W0 * Math.pow(LIMB_DECAY, parent.depth)),
-        r: NODE_R,
-        isLeaf: (childrenOf.get(kid)?.length ?? 0) === 0,
-      });
-      edges.push({ from: id, to: kid });
-      walk(kid, origin, r, angle - span / 2, angle + span / 2);
-    }
-  };
-
-  if (rootId) {
-    const root = nodes.get(rootId);
-    root.weight = leafWeights(rootId, childrenOf);
-    // the crown starts just above the founding couple, never on top of them
-    const origin = { x: 0, y: root.y - GOLD_R - 14 };
-    walk(rootId, origin, 0, Math.PI / 2 + FAN / 2, Math.PI / 2 - FAN / 2);
-  }
-
-  // ---- husbands and wives sit beside their partner, in a row ----
-  // A man may have two or three wives. They line up outward from him, each one
-  // tied to the one before, so the row reads as a single household.
-  for (const node of [...nodes.values()]) {
-    const spouses = spouseOf.get(node.id) ?? [];
-    if (!spouses.length) continue;
-    const a = node.angle;
+    // the wives stand beside him, first wife nearest, tied one to the next
     let previous = node;
-
-    spouses.forEach((spouse, i) => {
-      const r = node.isFounder ? GOLD_R : SPOUSE_R;
-      const gap = (previous.r || NODE_R) + r + 6;
-      let x, y;
-
-      if (node.isFounder) {
-        x = previous.x - gap;       // the gold pair, then any further wives to the left
-        y = node.y;
-      } else {
-        x = previous.x + Math.cos(a) * gap;
-        y = previous.y - Math.sin(a) * gap;
-      }
-
+    for (const spouse of wivesOf(id)) {
+      const sr = wifeR(id);
       const placed = {
-        id: spouse.id, person: spouse, depth: node.depth, x, y, r,
-        angle: a, radius: 0, w: 0, isLeaf: false,
-        isSpouse: true, isFounder: node.isFounder, partnerId: node.id,
+        id: spouse.id, person: spouse, depth, angle: UP, r: sr, w: 0,
+        x: previous.x + previous.r + sr + 8, y: node.y,
+        isLeaf: false, isSpouse: true, isFounder: node.isFounder, partnerId: id,
       };
       nodes.set(spouse.id, placed);
       marriages.push({ a: previous.id, b: spouse.id });
       previous = placed;
-    });
-  }
+    }
+
+    const kids = kidsOf(id);
+    if (!kids.length) return;
+    const below = kids.reduce((s, k) => s + width.get(k), 0) + H_GAP * (kids.length - 1);
+    let cursor = centre - below / 2;
+    for (const kid of kids) {
+      place(kid, cursor, depth + 1);
+      cursor += width.get(kid) + H_GAP;
+      edges.push({ from: id, to: kid });
+    }
+  };
+  place(rootId, 0, 0);
+
+  // the trunk stands at x = 0, so slide the whole crown onto it
+  const shift = -nodes.get(rootId).x;
+  for (const n of nodes.values()) n.x += shift;
 
   // ---- a child of a second wife hangs off his mother, not off his father ----
-  // The layout is still built down the father's branch, because that is what
-  // carries the generations; only the limb is moved, so you can see at a glance
-  // which wife a person came from. With a single wife nothing changes.
+  // Only the limb moves, so you can see at a glance which wife a person came
+  // from. With a single wife nothing changes.
   for (const edge of edges) {
     const child = tree.people[edge.to];
     const mother = child?.motherId ? nodes.get(child.motherId) : null;
     if (!mother || mother.partnerId !== edge.from) continue;
-    if ((spouseOf.get(edge.from)?.length ?? 0) < 2) continue;
+    if (wivesOf(edge.from).length < 2) continue;
     mother.w = Math.max(mother.w, nodes.get(edge.from).w * 0.86);
     edge.from = mother.id;
   }
