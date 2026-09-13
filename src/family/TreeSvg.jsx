@@ -70,6 +70,7 @@ export function TreeSvg({
         <MarriageBar key={`${a}-${b}`} a={nodes.get(a)} b={nodes.get(b)} />
       ))}
       {[...nodes.values()]
+        .filter((n) => n.person)
         .sort((a, b) => Number(Boolean(a.isFounder)) - Number(Boolean(b.isFounder)))
         .map((n) => (
           <PersonShape key={n.id} node={n} selected={n.id === selectedId}

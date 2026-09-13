@@ -12,7 +12,6 @@ const ROW_H = 128;               // one generation straight up from the last
 const ROW_MAX = 320;             // a wide family needs tall rows or it goes flat
 const H_GAP = 22;                // clear air between two households side by side
 const BRANCH_W0 = 30;            // the limbs that leave the trunk, good and thick
-const LIMB_DECAY = 0.8;          // how fast a limb thins with every generation
 const LIMB_MIN_W = 6;
 const UP = Math.PI / 2;          // every limb climbs; nothing fans sideways
 
@@ -56,6 +55,16 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     );
   };
 
+  /** How many names hang off a person, counting only the tips. */
+  const tips = new Map();
+  const countTips = (id) => {
+    const kids = childrenOf.get(id) ?? [];
+    const n = kids.length ? kids.reduce((s, k) => s + countTips(k), 0) : 1;
+    tips.set(id, n);
+    return n;
+  };
+  countTips(rootId);
+
   /** How wide a man and all his wives stand, shoulder to shoulder. */
   const blockW = (id) =>
     2 * discR(id) + wivesOf(id).reduce((s) => s + 2 * wifeR(id) + 8, 0);
@@ -88,16 +97,19 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   trunk.h = Math.min(460, Math.max(210, crownW * 0.2));
 
   // ---- then hand every subtree its own stretch of that floor ----
-  const place = (id, left, depth) => {
+  const place = (id, left, depth, limbW, y) => {
     const w = width.get(id);
     const centre = left + w / 2;
     const r = discR(id);
     const node = {
       id, person: tree.people[id], depth,
       x: centre - blockW(id) / 2 + r,
-      y: ROOT_Y + (id === rootId ? GOLD_R - 4 : 0) - depth * rowH,
+      y,
       angle: UP, r,
-      w: Math.max(LIMB_MIN_W, BRANCH_W0 * Math.pow(LIMB_DECAY, depth)),
+      // Leonardo's rule: a limb is as thick as the wood it has to carry, so a
+      // branch with half the family on it is thinner than its father by the
+      // square root of its share. That taper is what makes wood look like wood.
+      w: Math.max(LIMB_MIN_W, limbW),
       isFounder: id === rootId,
       isLeaf: (childrenOf.get(id) ?? []).length === 0,
     };
@@ -121,13 +133,20 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     if (!kids.length) return;
     const below = kids.reduce((s, k) => s + width.get(k), 0) + H_GAP * (kids.length - 1);
     let cursor = centre - below / 2;
+    const mine = tips.get(id) || 1;
     for (const kid of kids) {
-      place(kid, cursor, depth + 1);
+      // A bough sags the further out it reaches, so the children furthest from
+      // their father sit a little lower. That droop is the round canopy of a
+      // real tree; a row ruled dead straight looks like a washing line.
+      const droop = Math.min(rowH * 0.42, Math.abs(cursor + width.get(kid) / 2 - centre) * 0.15);
+      place(kid, cursor, depth + 1,
+        Math.max(LIMB_MIN_W, node.w * Math.sqrt((tips.get(kid) || 1) / mine)),
+        node.y - rowH + droop);
       cursor += width.get(kid) + H_GAP;
       edges.push({ from: id, to: kid });
     }
   };
-  place(rootId, 0, 0);
+  place(rootId, 0, 0, Math.max(BRANCH_W0, trunk.topW * 0.86), ROOT_Y + GOLD_R - 4);
 
   // the trunk stands at x = 0, so slide the whole crown onto it
   const shift = -nodes.get(rootId).x;
@@ -145,10 +164,40 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     edge.from = mother.id;
   }
 
+  // ---- big families fork in stages, the way wood really grows ----
+  // Six children all reaching straight for their father makes a clothesline.
+  // Instead the limbs on each side gather into one bough that leaves him, and
+  // the children split off that. Nothing moves; only the wood is re-routed.
+  const byParent = new Map();
+  for (const edge of edges) {
+    if (!byParent.has(edge.from)) byParent.set(edge.from, []);
+    byParent.get(edge.from).push(edge);
+  }
+  for (const [pid, list] of byParent) {
+    if (list.length < 3) continue;
+    const parent = nodes.get(pid);
+    for (const side of [-1, 1]) {
+      const group = list.filter((e) => Math.sign(nodes.get(e.to).x - parent.x) === side);
+      if (group.length < 2) continue;
+      const kids = group.map((e) => nodes.get(e.to));
+      const mid = kids.reduce((s2, k) => s2 + k.x, 0) / kids.length;
+      const jid = `joint-${pid}-${side}`;
+      nodes.set(jid, {
+        id: jid, isJoint: true, angle: UP, r: 0, depth: parent.depth,
+        x: parent.x + (mid - parent.x) * 0.42,
+        y: parent.y - rowH * 0.44,
+        w: Math.min(parent.w * 0.94, Math.hypot(...kids.map((k) => k.w))),
+      });
+      edges.push({ from: pid, to: jid });
+      for (const e of group) e.from = jid;
+    }
+  }
+
   // ---- bounds ----
   const half = trunk.baseW * 2.6;
   let minX = -half, maxX = half, minY = ROOT_Y - 60, maxY = ROOT_Y + trunk.h + trunk.baseW * 0.9;
   for (const n of nodes.values()) {
+    if (n.isJoint) continue;
     const r = (n.r || NODE_R) + 14;     // a person's tuft of leaves, nothing more
     minX = Math.min(minX, n.x - r);
     maxX = Math.max(maxX, n.x + r);
@@ -163,4 +212,4 @@ export function layoutTree(tree, childrenOf, spouseOf) {
 }
 
 /** Where a limb meets a person, measured back along its own heading. */
-export const inset = (n) => (n.r || NODE_R) * 0.94;
+export const inset = (n) => (n.isJoint ? 0 : (n.r || NODE_R) * 0.94);
