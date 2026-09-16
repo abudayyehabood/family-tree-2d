@@ -30,7 +30,7 @@ export function PersonShape({ node, selected, onSelect, onFocus }) {
   ].join(' ');
 
   return (
-    <g className={cls} transform={`translate(${node.x} ${node.y})`}
+    <g className={cls} data-id={node.id} transform={`translate(${node.x} ${node.y})`}
        onPointerDown={(e) => { e.stopPropagation(); onSelect(node.id); }}
        onClick={(e) => { e.stopPropagation(); onSelect(node.id); }}
        onDoubleClick={(e) => { e.stopPropagation(); onFocus?.(node.id); }}>

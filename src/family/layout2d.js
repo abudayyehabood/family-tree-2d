@@ -9,7 +9,10 @@ export const ROOT_Y = -14;
 const PAD = 56;
 
 const ROW_H = 128;               // one generation straight up from the last
-const ROW_MAX = 320;             // a wide family needs tall rows or it goes flat
+const ROW_MAX = 440;             // a wide family needs tall rows or it goes flat
+const SLOPE = 1.0;              // a limb must climb at least as far as it reaches
+const JOINT_X = 0.42;            // how far out a staged fork leaves its father
+const WED_GAP = 18;              // husband to wife: enough air for a limb to pass
 const H_GAP = 22;                // clear air between two households side by side
 const BRANCH_W0 = 30;            // the limbs that leave the trunk, good and thick
 const LIMB_MIN_W = 6;
@@ -67,7 +70,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
 
   /** How wide a man and all his wives stand, shoulder to shoulder. */
   const blockW = (id) =>
-    2 * discR(id) + wivesOf(id).reduce((s) => s + 2 * wifeR(id) + 8, 0);
+    2 * discR(id) + wivesOf(id).reduce((s) => s + 2 * wifeR(id) + WED_GAP, 0);
 
   /** Where each parent's own circle sits, measured from the household centre. */
   const rowSpots = (id) => {
@@ -77,7 +80,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     spots.set(id, x);
     for (const w of wivesOf(id)) {
       const sr = wifeR(id);
-      x += prev + sr + 8;
+      x += prev + sr + WED_GAP;
       spots.set(w.id, x);
       prev = sr;
     }
@@ -172,13 +175,6 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   const crown = build(rootId);
   const crownW = Math.max(...crown.right) - Math.min(...crown.left);
 
-  // How deep the family goes, so the rows can be spaced against its breadth.
-  const rows = crown.left.length;
-
-  // A wide family drawn on short rows spreads out flat and stops looking like
-  // a tree, so the rows grow taller as the crown grows wider.
-  const rowH = Math.min(ROW_MAX, Math.max(ROW_H, crownW / (rows * 1.5)));
-
   // The trunk carries the crown, so it is cut to its size: a thin pole under a
   // wide canopy, or a heavy bole under a narrow one, both read as wrong.
   trunk.baseW = Math.min(240, Math.max(84, crownW * 0.085));
@@ -186,12 +182,14 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   trunk.h = Math.min(460, Math.max(210, crownW * 0.2));
 
   // ---- then every household is set down on the spot its shape was given ----
-  const place = (id, anchor, depth, limbW, y) => {
+  // Only sideways. How high each row sits is decided afterwards, once we know
+  // how far the limbs of that row actually have to reach.
+  const place = (id, anchor, depth, limbW) => {
     const r = discR(id);
     const node = {
       id, person: tree.people[id], depth,
       x: anchor - blockW(id) / 2 + r,
-      y,
+      y: 0,
       angle: UP, r,
       // Leonardo's rule: a limb is as thick as the wood it has to carry, so a
       // branch with half the family on it is thinner than its father by the
@@ -208,7 +206,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       const sr = wifeR(id);
       const placed = {
         id: spouse.id, person: spouse, depth, angle: UP, r: sr, w: 0,
-        x: previous.x + previous.r + sr + 8, y: node.y,
+        x: previous.x + previous.r + sr + WED_GAP, y: node.y,
         isLeaf: false, isSpouse: true, isFounder: node.isFounder, partnerId: id,
       };
       nodes.set(spouse.id, placed);
@@ -222,12 +220,11 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       // One generation, one height. Letting the outer children sag put them
       // down in the band the limbs travel through, and the wood crossed itself.
       place(kid, anchor + shape.get(id).kids[i], depth + 1,
-        Math.max(LIMB_MIN_W, node.w * Math.sqrt((tips.get(kid) || 1) / mine)),
-        node.y - rowH);
+        Math.max(LIMB_MIN_W, node.w * Math.sqrt((tips.get(kid) || 1) / mine)));
       edges.push({ from: id, to: kid });
     });
   };
-  place(rootId, 0, 0, Math.max(BRANCH_W0, trunk.topW * 0.86), ROOT_Y + GOLD_R - 4);
+  place(rootId, 0, 0, Math.max(BRANCH_W0, trunk.topW * 0.86));
 
   // the trunk stands at x = 0, so slide the whole crown onto it
   const shift = -nodes.get(rootId).x;
@@ -263,15 +260,51 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       const kids = group.map((e) => nodes.get(e.to));
       const mid = kids.reduce((s2, k) => s2 + k.x, 0) / kids.length;
       const jid = `joint-${pid}-${side}`;
+      const jx = parent.x + (mid - parent.x) * JOINT_X;
+      // The bough takes the same share of the climb as it takes of the reach,
+      // so splitting a limb in two never makes either half lie flatter than the
+      // straight limb would have been.
+      const far = Math.max(...kids.map((k) => Math.abs(k.x - parent.x)), 1);
+      const f = Math.min(0.75, Math.max(0.25, Math.abs(jx - parent.x) / far));
       nodes.set(jid, {
         id: jid, isJoint: true, angle: UP, r: 0, depth: parent.depth,
-        x: parent.x + (mid - parent.x) * 0.42,
-        y: parent.y - rowH * 0.44,
+        x: jx, y: 0, jointOf: pid, climbOf: f,
         w: Math.min(parent.w * 0.94, Math.hypot(...kids.map((k) => k.w))),
       });
-      edges.push({ from: pid, to: jid });
-      for (const e of group) e.from = jid;
+      edges.push({ from: pid, to: jid, climb: f, row: parent.depth + 1 });
+      for (const e of group) { e.from = jid; e.climb = 1 - f; e.row = parent.depth + 1; }
     }
+  }
+
+  // ---- now each row is lifted as high as its own limbs need ----
+  // A limb that travels further sideways than it climbs lies down flat, and a
+  // band of flat wood is what reads as a pile of crossed cables. So a row is
+  // raised until every limb reaching into it climbs at least as much as it
+  // reaches. A row of only-sons stays short; the row under a big fan is tall.
+  // A limb that only gets part of the climb, because it hands over at a fork,
+  // asks for the row it would need if that part were the whole of it.
+  const need = [];
+  for (const edge of edges) {
+    const d = edge.row ?? nodes.get(edge.to).depth;
+    const dx = Math.abs(nodes.get(edge.to).x - nodes.get(edge.from).x);
+    need[d] = Math.max(need[d] || 0, (dx * SLOPE) / (edge.climb ?? 1));
+  }
+  // A big family really is broad, and a broad row honestly needs a tall climb,
+  // so the ceiling on a row is cut from the crown itself instead of a constant.
+  const rowCap = Math.max(ROW_MAX, crownW * 0.32);
+  const rowH = [0];
+  for (let d = 1; d < crown.left.length; d++) {
+    // the limb stops at the rim of each circle, so the climb it actually gets
+    // is a disc shorter than the gap between the rows; pay that back here.
+    rowH[d] = Math.min(rowCap, Math.max(ROW_H, (need[d] || 0) + 2 * NODE_R));
+  }
+  const rowY = [ROOT_Y + GOLD_R - 4];
+  for (let d = 1; d < rowH.length; d++) rowY[d] = rowY[d - 1] - rowH[d];
+  for (const n of nodes.values()) n.y = rowY[n.depth] ?? rowY[rowY.length - 1];
+  for (const n of nodes.values()) {
+    if (!n.jointOf) continue;
+    const parent = nodes.get(n.jointOf);
+    n.y = parent.y - (rowH[parent.depth + 1] || ROW_H) * n.climbOf;
   }
 
   // ---- bounds ----
