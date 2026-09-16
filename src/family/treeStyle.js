@@ -37,7 +37,8 @@ export const TREE_CSS = `
 .circle-person.is-female .disc-name { fill: #4a1c31; }
 .disc-year { font-size: 9px; fill: #6f6152; font-family: system-ui, sans-serif; }
 
-.marriage-line { stroke: #a5811f; stroke-width: 2.4; stroke-dasharray: 5 4; }
+.wed-wood { fill: #9a6b2f; }
+.wed-light { fill: #c08c44; opacity: 0.55; }
 
 /* While a finger is dragging or pinching, the drawing is re-rasterised every
    frame, and none of this fine detail is readable mid-gesture anyway, so it is
