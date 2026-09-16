@@ -13,6 +13,7 @@ const ROW_MAX = 440;             // a wide family needs tall rows or it goes fla
 const SLOPE = 1.0;              // a limb must climb at least as far as it reaches
 const JOINT_X = 0.42;            // how far out a staged fork leaves its father
 const WED_GAP = 18;              // husband to wife: enough air for a limb to pass
+const UP_GAP = 8;                // the first wife sits just over him, on a short tie
 const H_GAP = 22;                // clear air between two households side by side
 const BRANCH_W0 = 30;            // the limbs that leave the trunk, good and thick
 const LIMB_MIN_W = 6;
@@ -68,22 +69,50 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   };
   countTips(rootId);
 
+  /**
+   * Where the man and each of his wives sit, measured from the centre of the
+   * household. The first wife sits just above him on a short tie, the second on
+   * his right, the third on his left, and any after those keep going outwards,
+   * right then left, so the household stays balanced on his column.
+   */
+  const seatsOf = (id) => {
+    const r = discR(id), sr = wifeR(id);
+    const wives = wivesOf(id);
+    const seats = [];
+    let rightEdge = r, leftEdge = r;
+    wives.forEach((w, i) => {
+      if (i === 0) {                                  // straight up, short tie
+        seats.push({ id: w.id, dx: 0, dy: -(r + UP_GAP + sr) });
+        return;
+      }
+      if (i % 2 === 1) {                              // 2nd, 4th ... to his right
+        rightEdge += WED_GAP + sr;
+        seats.push({ id: w.id, dx: rightEdge, dy: 0 });
+        rightEdge += sr;
+      } else {                                        // 3rd, 5th ... to his left
+        leftEdge += WED_GAP + sr;
+        seats.push({ id: w.id, dx: -leftEdge, dy: 0 });
+        leftEdge += sr;
+      }
+    });
+    // the household is centred on the ground it covers, not on the man
+    const middle = (rightEdge - leftEdge) / 2;
+    return {
+      w: leftEdge + rightEdge,
+      man: -middle,
+      wives: seats.map((seat) => ({ ...seat, dx: seat.dx - middle })),
+    };
+  };
+
   /** How wide a man and all his wives stand, shoulder to shoulder. */
-  const blockW = (id) =>
-    2 * discR(id) + wivesOf(id).reduce((s) => s + 2 * wifeR(id) + WED_GAP, 0);
+  const blockW = (id) => seatsOf(id).w;
 
   /** Where each parent's own circle sits, measured from the household centre. */
   const rowSpots = (id) => {
-    const spots = new Map();
-    let x = -blockW(id) / 2 + discR(id);
-    let prev = discR(id);
-    spots.set(id, x);
-    for (const w of wivesOf(id)) {
-      const sr = wifeR(id);
-      x += prev + sr + WED_GAP;
-      spots.set(w.id, x);
-      prev = sr;
-    }
+    const seats = seatsOf(id);
+    const spots = new Map([[id, seats.man]]);
+    // a wife sitting over him shares his column, so her children hang there too
+    for (const seat of seats.wives) spots.set(seat.id, seat.dx);
     return spots;
   };
 
@@ -139,6 +168,9 @@ export function layoutTree(tree, childrenOf, spouseOf) {
         const mine = kids.filter((k) => (tree.people[k].motherId ?? id) === owner);
         if (mine.length) groups.push({ x: spots.get(owner), kids: mine });
       }
+      // a wife seated on his left gets her children on the left, so the runs are
+      // laid down in the order the mothers sit and no limb doubles back
+      groups.sort((p, q) => p.x - q.x);
     }
 
     let left = null, right = null;
@@ -186,9 +218,10 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   // how far the limbs of that row actually have to reach.
   const place = (id, anchor, depth, limbW) => {
     const r = discR(id);
+    const seats = seatsOf(id);
     const node = {
       id, person: tree.people[id], depth,
-      x: anchor - blockW(id) / 2 + r,
+      x: anchor + seats.man,
       y: 0,
       angle: UP, r,
       // Leonardo's rule: a limb is as thick as the wood it has to carry, so a
@@ -200,18 +233,16 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     };
     nodes.set(id, node);
 
-    // the wives stand beside him, first wife nearest, tied one to the next
-    let previous = node;
-    for (const spouse of wivesOf(id)) {
-      const sr = wifeR(id);
-      const placed = {
-        id: spouse.id, person: spouse, depth, angle: UP, r: sr, w: 0,
-        x: previous.x + previous.r + sr + WED_GAP, y: node.y,
+    // every wife is tied straight to her husband, in her own seat
+    const byId = new Map(wivesOf(id).map((w) => [w.id, w]));
+    for (const seat of seats.wives) {
+      nodes.set(seat.id, {
+        id: seat.id, person: byId.get(seat.id), depth, angle: UP, r: wifeR(id), w: 0,
+        x: anchor + seat.dx, y: seat.dy,
         isLeaf: false, isSpouse: true, isFounder: node.isFounder, partnerId: id,
-      };
-      nodes.set(spouse.id, placed);
-      marriages.push({ a: previous.id, b: spouse.id });
-      previous = placed;
+        seatDy: seat.dy,
+      });
+      marriages.push({ a: id, b: seat.id });
     }
 
     const kids = kidsOf(id);
@@ -238,6 +269,10 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const mother = child?.motherId ? nodes.get(child.motherId) : null;
     if (!mother || mother.partnerId !== edge.from) continue;
     if (wivesOf(edge.from).length < 2) continue;
+    // The first wife sits on her husband's own column, so her children's wood
+    // climbs the column and passes behind her. Starting it at her instead would
+    // send it across the limbs that leave him.
+    if (mother.seatDy) continue;
     mother.w = Math.max(mother.w, nodes.get(edge.from).w * 0.86);
     edge.from = mother.id;
   }
@@ -300,7 +335,9 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   }
   const rowY = [ROOT_Y + GOLD_R - 4];
   for (let d = 1; d < rowH.length; d++) rowY[d] = rowY[d - 1] - rowH[d];
-  for (const n of nodes.values()) n.y = rowY[n.depth] ?? rowY[rowY.length - 1];
+  for (const n of nodes.values()) {
+    n.y = (rowY[n.depth] ?? rowY[rowY.length - 1]) + (n.seatDy || 0);
+  }
   for (const n of nodes.values()) {
     if (!n.jointOf) continue;
     const parent = nodes.get(n.jointOf);
