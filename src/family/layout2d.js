@@ -12,8 +12,8 @@ const ROW_H = 128;               // one generation straight up from the last
 const ROW_MAX = 440;             // a wide family needs tall rows or it goes flat
 const SLOPE = 1.0;              // a limb must climb at least as far as it reaches
 const JOINT_X = 0.42;            // how far out a staged fork leaves its father
-const WED_GAP = 30;              // husband to wife: room for the tie to show as wood
-const UP_GAP = 20;               // the first wife sits just over him, on a short tie
+const WED_GAP = 46;              // husband to wife: room for the tie to show as wood
+const UP_GAP = 34;               // the first wife sits just over him, on a short tie
 const H_GAP = 22;                // clear air between two households side by side
 const BRANCH_W0 = 30;            // the limbs that leave the trunk, good and thick
 const LIMB_MIN_W = 6;
@@ -327,11 +327,20 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   // A big family really is broad, and a broad row honestly needs a tall climb,
   // so the ceiling on a row is cut from the crown itself instead of a constant.
   const rowCap = Math.max(ROW_MAX, crownW * 0.32);
+  // A wife seated over her husband stands inside the gap to the row above, so
+  // that row has to clear her head as well, or her circle runs into a son's.
+  const floor = [];
+  for (const n of nodes.values()) {
+    if (!n.seatDy) continue;
+    floor[n.depth + 1] = Math.max(floor[n.depth + 1] || 0,
+      Math.abs(n.seatDy) + n.r + NODE_R + H_GAP);
+  }
   const rowH = [0];
   for (let d = 1; d < crown.left.length; d++) {
     // the limb stops at the rim of each circle, so the climb it actually gets
     // is a disc shorter than the gap between the rows; pay that back here.
-    rowH[d] = Math.min(rowCap, Math.max(ROW_H, (need[d] || 0) + 2 * NODE_R));
+    rowH[d] = Math.max(floor[d] || 0,
+      Math.min(rowCap, Math.max(ROW_H, (need[d] || 0) + 2 * NODE_R)));
   }
   const rowY = [ROOT_Y + GOLD_R - 4];
   for (let d = 1; d < rowH.length; d++) rowY[d] = rowY[d - 1] - rowH[d];

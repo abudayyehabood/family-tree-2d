@@ -39,11 +39,12 @@ export const TREE_CSS = `
 
 .wed-wood { fill: #9a6b2f; }
 .wed-light { fill: #c08c44; opacity: 0.55; }
+.wed-grain { fill: none; stroke: #7a4f1d; stroke-width: 1.1; stroke-linecap: round; opacity: 0.7; }
 
 /* While a finger is dragging or pinching, the drawing is re-rasterised every
    frame, and none of this fine detail is readable mid-gesture anyway, so it is
    dropped until the fingers lift. */
 .is-moving .leaf-vein, .is-moving .leaf-rib, .is-moving .grain,
-.is-moving .fissure, .is-moving .knot-core, .is-moving .speck { display: none; }
+.is-moving .fissure, .is-moving .wed-grain, .is-moving .knot-core, .is-moving .speck { display: none; }
 .is-moving .leaf { stroke: none; }
 `;
