@@ -69,31 +69,31 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   const blockW = (id) =>
     2 * discR(id) + wivesOf(id).reduce((s) => s + 2 * wifeR(id) + 8, 0);
 
-  // ---- how each subtree packs, row against row ----
-  // A subtree is not handed a slab as wide as its widest row. It is slid
-  // sideways until it actually touches its neighbour, row by row, so a man
-  // with one son is not thrown past his brother's whole crowd. Each shape
-  // keeps the left and right edge of every row below it, measured from its
-  // own household's centre.
-  const shape = new Map();
-  const build = (id) => {
-    const half = blockW(id) / 2;
-    const kids = kidsOf(id);
-    if (!kids.length) {
-      const bare = { left: [-half], right: [half], kids: [] };
-      shape.set(id, bare);
-      return bare;
+  /** Where each parent's own circle sits, measured from the household centre. */
+  const rowSpots = (id) => {
+    const spots = new Map();
+    let x = -blockW(id) / 2 + discR(id);
+    let prev = discR(id);
+    spots.set(id, x);
+    for (const w of wivesOf(id)) {
+      const sr = wifeR(id);
+      x += prev + sr + 8;
+      spots.set(w.id, x);
+      prev = sr;
     }
+    return spots;
+  };
 
+  /** Slide a run of subtrees together until their profiles touch. */
+  const packRun = (ids) => {
     let left = null, right = null;
     const offs = [];
-    for (const kid of kids) {
-      const c = build(kid);
+    for (const id of ids) {
+      const c = build(id);
       let shift = 0;
       if (left) {
-        // as close to the last sibling as their two profiles allow
-        const rows2 = Math.min(right.length, c.left.length);
-        for (let d = 0; d < rows2; d++) shift = Math.max(shift, right[d] - c.left[d] + H_GAP);
+        const rows = Math.min(right.length, c.left.length);
+        for (let d = 0; d < rows; d++) shift = Math.max(shift, right[d] - c.left[d] + H_GAP);
       } else {
         left = []; right = [];
       }
@@ -104,16 +104,71 @@ export function layoutTree(tree, childrenOf, spouseOf) {
         else { left[d] = Math.min(left[d], l); right[d] = Math.max(right[d], r); }
       }
     }
+    return { left, right, offs };
+  };
 
-    const mid = (offs[0] + offs[offs.length - 1]) / 2;     // he sits over his children
+  // ---- how each subtree packs, row against row ----
+  // A subtree is not handed a slab as wide as its widest row. It is slid
+  // sideways until it actually touches its neighbour, row by row, so a man
+  // with one son is not thrown past his brother's whole crowd. Each shape
+  // keeps the left and right edge of every row below it, measured from its
+  // own household's centre.
+  const shape = new Map();
+  function build(id) {
+    const half = blockW(id) / 2;
+    const kids = kidsOf(id);
+    if (!kids.length) {
+      const bare = { left: [-half], right: [half], kids: [] };
+      shape.set(id, bare);
+      return bare;
+    }
+
+    // With two wives or more, each mother's children are packed as their own
+    // run and hung over her, so no limb has to cross the household to reach
+    // its child. With one wife they all belong to the man and sit over him.
+    const spots = rowSpots(id);
+    const wives = wivesOf(id);
+    const groups = [];
+    if (wives.length < 2) {
+      groups.push({ x: spots.get(id), kids });
+    } else {
+      for (const owner of [id, ...wives.map((w) => w.id)]) {
+        const mine = kids.filter((k) => (tree.people[k].motherId ?? id) === owner);
+        if (mine.length) groups.push({ x: spots.get(owner), kids: mine });
+      }
+    }
+
+    let left = null, right = null;
+    const offs = new Map();
+    for (const group of groups) {
+      const run = packRun(group.kids);
+      const mid = (run.offs[0] + run.offs[run.offs.length - 1]) / 2;
+      let base = group.x - mid;                  // centred over their own parent
+      if (left) {
+        let push = 0;                            // never on top of a half-sister
+        const rows = Math.min(right.length, run.left.length);
+        for (let d = 0; d < rows; d++) push = Math.max(push, right[d] - (base + run.left[d]) + H_GAP);
+        base += Math.max(0, push);
+      } else {
+        left = []; right = [];
+      }
+      group.kids.forEach((kid, i) => offs.set(kid, base + run.offs[i]));
+      for (let d = 0; d < run.left.length; d++) {
+        const l = base + run.left[d], r = base + run.right[d];
+        if (d >= left.length) { left.push(l); right.push(r); }
+        else { left[d] = Math.min(left[d], l); right[d] = Math.max(right[d], r); }
+      }
+    }
+
     const packed = {
-      left: [-half, ...left.map((v) => v - mid)],
-      right: [half, ...right.map((v) => v - mid)],
-      kids: offs.map((o) => o - mid),
+      left: [-half, ...left],
+      right: [half, ...right],
+      kids: kids.map((k) => offs.get(k)),
     };
     shape.set(id, packed);
     return packed;
-  };
+  }
+
   const crown = build(rootId);
   const crownW = Math.max(...crown.right) - Math.min(...crown.left);
 
@@ -164,14 +219,11 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const kids = kidsOf(id);
     const mine = tips.get(id) || 1;
     kids.forEach((kid, i) => {
-      const off = shape.get(id).kids[i];
-      // A bough sags a little the further out it reaches, so the canopy rounds
-      // off instead of ruling dead straight. Kept small: a big droop turns the
-      // limb into a detour rather than a branch.
-      const droop = Math.min(rowH * 0.2, Math.abs(off) * 0.07);
-      place(kid, anchor + off, depth + 1,
+      // One generation, one height. Letting the outer children sag put them
+      // down in the band the limbs travel through, and the wood crossed itself.
+      place(kid, anchor + shape.get(id).kids[i], depth + 1,
         Math.max(LIMB_MIN_W, node.w * Math.sqrt((tips.get(kid) || 1) / mine)),
-        node.y - rowH + droop);
+        node.y - rowH);
       edges.push({ from: id, to: kid });
     });
   };
