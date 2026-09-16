@@ -58,18 +58,15 @@ export const ribbon = (a, c, b, w0, w1, steps, seed, rough) =>
  * and comes into the child growing straight up again. That fork is what makes
  * wood read as wood; a limb aimed straight at the child reads as a cable.
  */
-export function limbCurve(from, to, off, seed = 0) {
+export function limbCurve(from, to, off) {
   const a = { x: from.x, y: from.y };
   const b = { x: to.x, y: to.y + off };
-  const rise = Math.max(40, a.y - b.y);
-  const dx = b.x - a.x;
-  // A branch that has to reach far sideways lifts higher on the way, the way a
-  // loaded bough arches, instead of running along flat like a pipe.
-  const arch = Math.min(Math.abs(dx) * 0.3, rise * 0.9);
-  const wobble = ((seed % 100) / 100 - 0.5) * 0.12;      // no two limbs identical
+  const rise = Math.max(30, a.y - b.y);
+  // Both handles stay between the two ends, so the limb only ever climbs. An
+  // overshooting handle is what put those pointless loops in the wood.
   return [a,
-    { x: a.x + dx * (0.34 + wobble), y: a.y - rise * 0.5 - arch },
-    { x: b.x - dx * 0.06, y: b.y + rise * 0.62 + arch * 0.3 },
+    { x: a.x, y: a.y - rise * 0.45 },
+    { x: b.x, y: b.y + rise * 0.45 },
     b];
 }
 

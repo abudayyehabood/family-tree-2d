@@ -135,10 +135,10 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     let cursor = centre - below / 2;
     const mine = tips.get(id) || 1;
     for (const kid of kids) {
-      // A bough sags the further out it reaches, so the children furthest from
-      // their father sit a little lower. That droop is the round canopy of a
-      // real tree; a row ruled dead straight looks like a washing line.
-      const droop = Math.min(rowH * 0.42, Math.abs(cursor + width.get(kid) / 2 - centre) * 0.15);
+      // A bough sags a little the further out it reaches, so the canopy rounds
+      // off instead of ruling dead straight. Kept small: a big droop turns the
+      // limb into a detour rather than a branch.
+      const droop = Math.min(rowH * 0.2, Math.abs(cursor + width.get(kid) / 2 - centre) * 0.07);
       place(kid, cursor, depth + 1,
         Math.max(LIMB_MIN_W, node.w * Math.sqrt((tips.get(kid) || 1) / mine)),
         node.y - rowH + droop);
@@ -178,7 +178,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const parent = nodes.get(pid);
     for (const side of [-1, 1]) {
       const group = list.filter((e) => Math.sign(nodes.get(e.to).x - parent.x) === side);
-      if (group.length < 2) continue;
+      if (group.length < 3) continue;
       const kids = group.map((e) => nodes.get(e.to));
       const mid = kids.reduce((s2, k) => s2 + k.x, 0) / kids.length;
       const jid = `joint-${pid}-${side}`;

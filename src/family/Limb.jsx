@@ -4,7 +4,7 @@ import { curveOf, grainOn, hashNum, limbCurve, ribbonOn } from './shapes';
 /** A limb only exists because a person has a child. Wood and grain. */
 export function Limb({ from, to }) {
   const seed = hashNum(`${from.id}>${to.id}`);
-  const pts = limbCurve(from, to, inset(to), seed);
+  const pts = limbCurve(from, to, inset(to));
   const curve = curveOf(pts);
   // it swells where it leaves its father, then tapers all the way to the child
   const w0 = Math.min(from.w, to.w * 1.5);
