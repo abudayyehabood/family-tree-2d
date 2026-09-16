@@ -69,22 +69,56 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   const blockW = (id) =>
     2 * discR(id) + wivesOf(id).reduce((s) => s + 2 * wifeR(id) + 8, 0);
 
-  // ---- how much floor each subtree needs, measured from the leaves down ----
-  const width = new Map();
-  const measure = (id) => {
+  // ---- how each subtree packs, row against row ----
+  // A subtree is not handed a slab as wide as its widest row. It is slid
+  // sideways until it actually touches its neighbour, row by row, so a man
+  // with one son is not thrown past his brother's whole crowd. Each shape
+  // keeps the left and right edge of every row below it, measured from its
+  // own household's centre.
+  const shape = new Map();
+  const build = (id) => {
+    const half = blockW(id) / 2;
     const kids = kidsOf(id);
-    const below = kids.length
-      ? kids.reduce((s, k) => s + measure(k), 0) + H_GAP * (kids.length - 1)
-      : 0;
-    const w = Math.max(blockW(id), below);
-    width.set(id, w);
-    return w;
+    if (!kids.length) {
+      const bare = { left: [-half], right: [half], kids: [] };
+      shape.set(id, bare);
+      return bare;
+    }
+
+    let left = null, right = null;
+    const offs = [];
+    for (const kid of kids) {
+      const c = build(kid);
+      let shift = 0;
+      if (left) {
+        // as close to the last sibling as their two profiles allow
+        const rows2 = Math.min(right.length, c.left.length);
+        for (let d = 0; d < rows2; d++) shift = Math.max(shift, right[d] - c.left[d] + H_GAP);
+      } else {
+        left = []; right = [];
+      }
+      offs.push(shift);
+      for (let d = 0; d < c.left.length; d++) {
+        const l = shift + c.left[d], r = shift + c.right[d];
+        if (d >= left.length) { left.push(l); right.push(r); }
+        else { left[d] = Math.min(left[d], l); right[d] = Math.max(right[d], r); }
+      }
+    }
+
+    const mid = (offs[0] + offs[offs.length - 1]) / 2;     // he sits over his children
+    const packed = {
+      left: [-half, ...left.map((v) => v - mid)],
+      right: [half, ...right.map((v) => v - mid)],
+      kids: offs.map((o) => o - mid),
+    };
+    shape.set(id, packed);
+    return packed;
   };
-  const crownW = measure(rootId);
+  const crown = build(rootId);
+  const crownW = Math.max(...crown.right) - Math.min(...crown.left);
 
   // How deep the family goes, so the rows can be spaced against its breadth.
-  const depthOf = (id) => 1 + Math.max(0, ...kidsOf(id).map(depthOf));
-  const rows = depthOf(rootId);
+  const rows = crown.left.length;
 
   // A wide family drawn on short rows spreads out flat and stops looking like
   // a tree, so the rows grow taller as the crown grows wider.
@@ -96,14 +130,12 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   trunk.topW = trunk.baseW * 0.42;
   trunk.h = Math.min(460, Math.max(210, crownW * 0.2));
 
-  // ---- then hand every subtree its own stretch of that floor ----
-  const place = (id, left, depth, limbW, y) => {
-    const w = width.get(id);
-    const centre = left + w / 2;
+  // ---- then every household is set down on the spot its shape was given ----
+  const place = (id, anchor, depth, limbW, y) => {
     const r = discR(id);
     const node = {
       id, person: tree.people[id], depth,
-      x: centre - blockW(id) / 2 + r,
+      x: anchor - blockW(id) / 2 + r,
       y,
       angle: UP, r,
       // Leonardo's rule: a limb is as thick as the wood it has to carry, so a
@@ -130,21 +162,18 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     }
 
     const kids = kidsOf(id);
-    if (!kids.length) return;
-    const below = kids.reduce((s, k) => s + width.get(k), 0) + H_GAP * (kids.length - 1);
-    let cursor = centre - below / 2;
     const mine = tips.get(id) || 1;
-    for (const kid of kids) {
+    kids.forEach((kid, i) => {
+      const off = shape.get(id).kids[i];
       // A bough sags a little the further out it reaches, so the canopy rounds
       // off instead of ruling dead straight. Kept small: a big droop turns the
       // limb into a detour rather than a branch.
-      const droop = Math.min(rowH * 0.2, Math.abs(cursor + width.get(kid) / 2 - centre) * 0.07);
-      place(kid, cursor, depth + 1,
+      const droop = Math.min(rowH * 0.2, Math.abs(off) * 0.07);
+      place(kid, anchor + off, depth + 1,
         Math.max(LIMB_MIN_W, node.w * Math.sqrt((tips.get(kid) || 1) / mine)),
         node.y - rowH + droop);
-      cursor += width.get(kid) + H_GAP;
       edges.push({ from: id, to: kid });
-    }
+    });
   };
   place(rootId, 0, 0, Math.max(BRANCH_W0, trunk.topW * 0.86), ROOT_Y + GOLD_R - 4);
 
