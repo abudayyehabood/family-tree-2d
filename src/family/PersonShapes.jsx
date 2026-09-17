@@ -50,11 +50,11 @@ export function PersonShape({ node, selected, onSelect, onFocus }) {
 const radius = (n) => n.r || NODE_R;
 
 /**
- * A wife is carried on her own small branch: a twig that leaves the low side
- * of her husband's stem, climbs, and sets her down just above and beside him.
- * It is built exactly like every other limb, only short and thin, so a
- * marriage reads as a little branch of the same tree and never as a rod laid
- * between two circles.
+ * A wife is carried on her own branch: it leaves the low side of her husband's
+ * stem, climbs, and sets her down out to his side. It is built exactly like
+ * every other limb and carries the same wood he was handed, so a marriage
+ * reads as a branch of the same tree and never as a rod laid between two
+ * circles. Its colour is the only thing that marks it out.
  */
 export function MarriageBar({ a, b }) {
   const ra = radius(a), rb = radius(b);
@@ -70,8 +70,11 @@ export function MarriageBar({ a, b }) {
   ];
   const seed = hashNum(`${a.id}-${b.id}`);
   const curve = curveOf(pts);
-  const w0 = Math.max(12, ra * 0.44);
-  const w1 = Math.max(8, rb * 0.3);
+  // A marriage is an ordinary branch of the same tree, so it carries the same
+  // wood the husband himself was handed and tapers off it like any other limb.
+  // Only its colour says what it is.
+  const w0 = Math.max(16, a.w || ra * 0.7);
+  const w1 = Math.max(13, (b.w || w0 * 0.8) * 0.9);
   const rough = 0.14;
   const lit = { x: -w0 * 0.16, y: -w0 * 0.16 };
   const hi = curveOf(pts.map((q) => ({ x: q.x + lit.x, y: q.y + lit.y })));
@@ -80,7 +83,7 @@ export function MarriageBar({ a, b }) {
     <g className="marriage">
       <path d={ribbonOn(curve, w0, w1, 22, seed % 100, rough)} className="wed-wood" />
       <path d={ribbonOn(hi, w0 * 0.32, w1 * 0.3, 16, seed % 100, rough)} className="wed-light" />
-      {grainOn(curve, w0, w1, seed, 3).map((d, k) => (
+      {grainOn(curve, w0, w1, seed, Math.min(7, Math.round(w0 / 2.6))).map((d, k) => (
         <path key={k} d={d} className="wed-grain" />
       ))}
     </g>

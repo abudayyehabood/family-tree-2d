@@ -12,13 +12,17 @@ const ROW_H = 96;               // one generation straight up from the last
 const ROW_MAX = 210;             // a wide family needs tall rows or it goes flat
 const SLOPE = 0.72;              // how steeply a limb must climb against its reach
 const JOINT_X = 0.42;            // how far out a staged fork leaves its father
-const WED_GAP = 46;              // husband to wife: how far her branch reaches out
+const WED_GAP = 62;              // husband to wife: how far her branch reaches out
 const WED_REACH = 1.6;           // and how much of that reach is her own branch
 const WED_UP = 3.4;              // how high that branch carries her off his row
-const H_GAP = 30;                // clear air between two households side by side
+const H_GAP = 44;                // clear air between two households side by side
 const SWAY = 0.3;                // how much a household may ride off its own row
-const BRANCH_W0 = 34;            // the limbs that leave the trunk, good and thick
-const LIMB_MIN_W = 10;          // even the last twig is wood, not a wire
+const BRANCH_W0 = 52;            // the limbs that leave the trunk, good and thick
+const LIMB_MIN_W = 17;           // even the last twig is wood, not a wire
+// A tree that is still being written into has to keep growing without going
+// thin or flat, so nothing below is cut to a fixed ceiling: the trunk, the
+// rows and the wood are all cut from the crown the tree actually has.
+const LIMB_TAPER = 0.62;         // how slowly a limb gives up its wood downstream
 const UP = Math.PI / 2;          // every limb climbs; nothing fans sideways
 
 /** A small, stable number in [0,1) for any id, so no two limbs are twins. */
@@ -231,9 +235,9 @@ export function layoutTree(tree, childrenOf, spouseOf) {
 
   // The trunk carries the crown, so it is cut to its size: a thin pole under a
   // wide canopy, or a heavy bole under a narrow one, both read as wrong.
-  trunk.baseW = Math.min(240, Math.max(84, crownW * 0.085));
-  trunk.topW = trunk.baseW * 0.42;
-  trunk.h = Math.min(460, Math.max(210, crownW * 0.2));
+  trunk.baseW = Math.max(110, crownW * 0.085);
+  trunk.topW = trunk.baseW * 0.5;
+  trunk.h = Math.max(240, crownW * 0.2);
 
   // ---- then every household is set down on the spot its shape was given ----
   // Only sideways. How high each row sits is decided afterwards, once we know
@@ -273,7 +277,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       // One generation, one height. Letting the outer children sag put them
       // down in the band the limbs travel through, and the wood crossed itself.
       place(kid, anchor + shape.get(id).kids[i], depth + 1,
-        Math.max(LIMB_MIN_W, node.w * Math.sqrt((tips.get(kid) || 1) / mine)));
+        Math.max(LIMB_MIN_W, node.w * ((tips.get(kid) || 1) / mine) ** (LIMB_TAPER / 2)));
       edges.push({ from: id, to: kid });
     });
   };
@@ -290,7 +294,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const child = tree.people[edge.to];
     const mother = child?.motherId ? nodes.get(child.motherId) : null;
     if (!mother || mother.partnerId !== edge.from) continue;
-    mother.w = Math.max(mother.w, nodes.get(edge.from).w * 0.86);
+    mother.w = Math.max(mother.w, nodes.get(edge.from).w * 0.92);
     edge.from = mother.id;
   }
 
