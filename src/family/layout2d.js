@@ -268,11 +268,9 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const child = tree.people[edge.to];
     const mother = child?.motherId ? nodes.get(child.motherId) : null;
     if (!mother || mother.partnerId !== edge.from) continue;
-    if (wivesOf(edge.from).length < 2) continue;
-    // The first wife sits on her husband's own column, so her children's wood
-    // climbs the column and passes behind her. Starting it at her instead would
-    // send it across the limbs that leave him.
-    if (mother.seatDy) continue;
+    // The first wife sits on her husband's own column, so her wood leaves her
+    // going straight up; his other limbs leave him lower down and to the side,
+    // so nothing crosses.
     mother.w = Math.max(mother.w, nodes.get(edge.from).w * 0.86);
     edge.from = mother.id;
   }
