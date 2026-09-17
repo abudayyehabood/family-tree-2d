@@ -26,7 +26,8 @@ const LIMB_MIN_W = 17;           // even the last twig is wood, not a wire
 // thin or flat, so nothing below is cut to a fixed ceiling: the trunk, the
 // rows and the wood are all cut from the crown the tree actually has.
 const LIMB_TAPER = 0.62;         // how slowly a limb gives up its wood downstream
-const UP = Math.PI / 2;          // every limb climbs; nothing fans sideways
+const UP = Math.PI / 2;          // the heading a person is given before the fan
+const FAN = (168 * Math.PI) / 180; // how far round the crown opens off the trunk
 
 /** A small, stable number in [0,1) for any id, so no two limbs are twins. */
 const wobble = (str) => {
@@ -413,6 +414,62 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const parent = nodes.get(n.jointOf);
     n.y = parent.y - (rowH[parent.depth + 1] || ROW_H) * n.climbOf;
   }
+
+  // ---- and finally the crown is opened out around the top of the trunk ----
+  // Everything above was worked out on stacked rows, because rows are the only
+  // honest way to keep a generation together and stop two cousins sharing a
+  // spot. But a tree does not grow in rows. A limb leaves the trunk and heads
+  // OUT; the family further from the founder is further out, not higher up.
+  // So the rows are opened into a fan: how far a person had climbed becomes
+  // how far out he stands, and where he sat across the row becomes which way
+  // he leans. The middle of the family goes up, the edges go sideways, and the
+  // last of them hang a little below the line the way a low limb really does.
+  const seat = nodes.get(rootId);
+  const cx = seat.x, cy = seat.y;                 // the top of the trunk
+  const topRow = cy;
+  let reachW = 1;
+  for (const n of nodes.values()) reachW = Math.max(reachW, Math.abs(n.x - cx) * 2);
+  // How far out the first ring stands. Bending a row into an arc shortens it,
+  // so the arc has to be long enough to still hold the row that was packed on
+  // it or two cousins would be pushed into each other on the way round.
+  const ring = () => (reachW / FAN) * 1.12;
+
+  // The fan is opened as wide as it can go while the lowest limb still stays
+  // clear of the trunk's own foot; nothing is allowed to droop into the ground.
+  let fan = FAN;
+  let R0 = ring();
+  for (let i = 0; i < 24; i++) {
+    const deepest = Math.max(...[...nodes.values()].map((n) => topRow - n.y));
+    const drop = Math.sin(fan / 2 - Math.PI / 2 >= 0 ? fan / 2 - Math.PI / 2 : 0) * (R0 + deepest);
+    if (drop <= trunk.h * 0.42) break;
+    fan -= (4 * Math.PI) / 180;
+    R0 = (reachW / fan) * 1.12;
+  }
+
+  // The first ring has to stand well clear of the trunk or the arc it is bent
+  // around is too short to hold it. Left alone that hollows the crown out into
+  // a bare hoop, so the generations behind it are spread further apart to fill
+  // it: a crown three times deeper than the hole in the middle of it reads as
+  // a tree, a thin ring reads as an archway.
+  const far = Math.max(1, ...[...nodes.values()].map((n) => topRow - n.y));
+  const deep = Math.min(4, Math.max(1, (3 * R0) / far));
+
+  for (const n of nodes.values()) {
+    const th = Math.PI / 2 - ((n.x - cx) / reachW) * fan;
+    const r = R0 + (topRow - n.y) * deep;
+    n.angle = th;                       // his leaves and his limbs follow him out
+    n.x = cx + Math.cos(th) * r;
+    n.y = cy - Math.sin(th) * r + R0;   // the founder himself stays on the trunk
+  }
+
+  // The trunk was cut to the rows, but the rows have just been opened into a
+  // fan and the drawing is a good deal wider than they were. Cut it again, to
+  // the crown that is actually standing on it.
+  let openW = 1;
+  for (const n of nodes.values()) openW = Math.max(openW, Math.abs(n.x - cx) * 2);
+  trunk.baseW = Math.max(110, openW * 0.075);
+  trunk.topW = trunk.baseW * 0.5;
+  trunk.h = Math.max(240, openW * 0.17);
 
   // ---- bounds ----
   const half = trunk.baseW * 2.6;

@@ -63,19 +63,26 @@ export const ribbon = (a, c, b, w0, w1, steps, seed, rough) =>
   ribbonOn(curveOf([a, c, b]), w0, w1, steps, seed, rough);
 
 /**
- * The shape of a branch: it leaves its father growing straight up, bends over,
- * and comes into the child growing straight up again. That fork is what makes
- * wood read as wood; a limb aimed straight at the child reads as a cable.
+ * The shape of a branch: it leaves its father growing along the way its father
+ * grows, bends over, and comes into the child growing along the way the child
+ * grows. That fork is what makes wood read as wood; a limb aimed straight at
+ * the child reads as a cable. Neither end points up any more: a limb that
+ * leaves the trunk sideways carries on sideways, and one that hangs off the
+ * low edge of the crown leaves its father heading down.
  */
 export function limbCurve(from, to, off) {
+  const fa = from.angle ?? Math.PI / 2;
+  const ta = to.angle ?? Math.PI / 2;
   const a = { x: from.x, y: from.y };
-  const b = { x: to.x, y: to.y + off };
-  const rise = Math.max(30, a.y - b.y);
-  // Both handles stay between the two ends, so the limb only ever climbs. An
+  // the limb stops at the rim of the child's circle, measured back along the
+  // way the child itself grows, not straight down the page
+  const b = { x: to.x - Math.cos(ta) * off, y: to.y + Math.sin(ta) * off };
+  const reach = Math.max(30, Math.hypot(b.x - a.x, b.y - a.y)) * 0.45;
+  // Both handles stay between the two ends, so the limb never doubles back. An
   // overshooting handle is what put those pointless loops in the wood.
   return [a,
-    { x: a.x, y: a.y - rise * 0.45 },
-    { x: b.x, y: b.y + rise * 0.45 },
+    { x: a.x + Math.cos(fa) * reach, y: a.y - Math.sin(fa) * reach },
+    { x: b.x - Math.cos(ta) * reach, y: b.y + Math.sin(ta) * reach },
     b];
 }
 
