@@ -83,8 +83,12 @@ export function MarriageBar({ a, b }) {
   // A marriage is an ordinary branch of the same tree, so it carries the same
   // wood the husband himself was handed and tapers off it like any other limb.
   // Only its colour says what it is.
-  const w0 = Math.max(16, a.w || ra * 0.7);
-  const w1 = Math.max(13, (b.w || w0 * 0.8) * 0.9);
+  // Her branch carries her and her own children, not her husband's whole
+  // family, so it is cut to her weight. Handing it his wood turned a short
+  // branch into a slab lying across the fork.
+  const her = b.w || ra * 0.7;
+  const w0 = Math.max(16, her * 1.2);
+  const w1 = Math.max(13, her * 0.82);
   const rough = 0.14;
   const lit = { x: -Math.abs(across.x) * w0 * 0.16 - w0 * 0.05, y: -w0 * 0.16 };
   const hi = curveOf(pts.map((q) => ({ x: q.x + lit.x, y: q.y + lit.y })));
