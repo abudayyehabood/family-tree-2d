@@ -465,6 +465,12 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     for (const n of nodes.values()) if (n.partnerId === id) out.push(n.id);
     return out;
   };
+  const shove = (id, vx, vy) => {
+    for (const k of kin(id)) {
+      const n = nodes.get(k);
+      if (n) { n.x += vx; n.y += vy; }
+    }
+  };
   const limbPts = (a, b) => {
     const off = inset(b);
     const p0 = { x: a.x, y: a.y };
@@ -485,6 +491,57 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     }
     return out;
   };
+  // Two branches that still manage to cross are prised apart. The wood is
+  // walked against itself, branch by branch; two that cross are almost always
+  // a man's two wives reaching for their own children past each other, and
+  // whichever pair it is, the two families are pushed apart sideways until the
+  // wood between them is clear. It sits inside the same loop as everything
+  // else, so untangling a pair cannot quietly leave somebody in a branch.
+  const turn = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const meets = (p, q, u, v) => {
+    const d1 = turn(u, v, p), d2 = turn(u, v, q), d3 = turn(p, q, u), d4 = turn(p, q, v);
+    return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+  };
+  const untangle = () => {
+    const wood = edges.map((e) => ({ e, pts: limbPts(nodes.get(e.from), nodes.get(e.to)) }));
+    let n = 0;
+    for (let i = 0; i < wood.length; i++) {
+      for (let j = i + 1; j < wood.length; j++) {
+        const A = wood[i], B = wood[j];
+        if (A.e.from === B.e.from || A.e.to === B.e.to) continue;
+        if (A.e.from === B.e.to || A.e.to === B.e.from) continue;
+        let hit = false;
+        for (let m = 0; m < A.pts.length - 1 && !hit; m++) {
+          for (let k = 0; k < B.pts.length - 1 && !hit; k++) {
+            hit = meets(A.pts[m], A.pts[m + 1], B.pts[k], B.pts[k + 1]);
+          }
+        }
+        if (!hit) continue;
+        const ma = nodes.get(A.e.from), mb = nodes.get(B.e.from);
+        // Almost every crossing left is a man's two wives each reaching for
+        // their own children past the other. Their families are far too heavy
+        // to shove aside, and they do not need to be: the wives simply have
+        // the wrong seats. Trade the two seats and both branches come straight.
+        if (ma.partnerId && ma.partnerId === mb.partnerId) {
+          const seat = { x: ma.x, y: ma.y, angle: ma.angle };
+          ma.x = mb.x; ma.y = mb.y; ma.angle = mb.angle;
+          mb.x = seat.x; mb.y = seat.y; mb.angle = seat.angle;
+          n++;
+          continue;
+        }
+        const a = nodes.get(A.e.to), b = nodes.get(B.e.to);
+        if (kin(a.id).includes(b.id) || kin(b.id).includes(a.id)) continue;
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const step = (a.r + b.r + H_GAP) * 0.9;
+        shove(a.id, (dx / len) * step, (dy / len) * step);
+        shove(b.id, (-dx / len) * step, (-dy / len) * step);
+        n++;
+      }
+    }
+    return n;
+  };
+
   const folk = [...nodes.values()].filter((n) => n.person);
   for (let pass = 0; pass < 12; pass++) {
     let moved = 0;
@@ -516,16 +573,12 @@ export function layoutTree(tree, childrenOf, spouseOf) {
         const len = Math.hypot(nx, ny) || 1;
         const step = want - best;
         const sign = ours ? -1 : 1;
-        const vx = (nx / len) * step * sign, vy = (ny / len) * step * sign;
-        const shove = ours ? kin(b.id) : kin(c.id);
-        if (ours && shove.includes(c.id)) continue;   // nothing left to separate
-        for (const id of shove) {
-          const k = nodes.get(id);
-          if (k) { k.x += vx; k.y += vy; }
-        }
+        if (ours && kin(b.id).includes(c.id)) continue;  // nothing left to separate
+        shove(ours ? b.id : c.id, (nx / len) * step * sign, (ny / len) * step * sign);
         moved++;
       }
     }
+    moved += untangle();
     if (!moved) break;
   }
 
