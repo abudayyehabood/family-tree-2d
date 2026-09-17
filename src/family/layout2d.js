@@ -9,14 +9,14 @@ export const ROOT_Y = -14;
 const PAD = 56;
 
 const ROW_H = 128;               // one generation straight up from the last
-const ROW_MAX = 440;             // a wide family needs tall rows or it goes flat
-const SLOPE = 1.0;              // a limb must climb at least as far as it reaches
+const ROW_MAX = 300;             // a wide family needs tall rows or it goes flat
+const SLOPE = 0.6;               // how steeply a limb must climb against its reach
 const JOINT_X = 0.42;            // how far out a staged fork leaves its father
-const WED_GAP = 46;              // husband to wife: room for the tie to show as wood
+const WED_GAP = 40;              // husband to wife: room for the tie to show as wood
 const UP_GAP = 34;               // the first wife sits just over him, on a short tie
 const H_GAP = 22;                // clear air between two households side by side
-const BRANCH_W0 = 30;            // the limbs that leave the trunk, good and thick
-const LIMB_MIN_W = 6;
+const BRANCH_W0 = 34;            // the limbs that leave the trunk, good and thick
+const LIMB_MIN_W = 10;          // even the last twig is wood, not a wire
 const UP = Math.PI / 2;          // every limb climbs; nothing fans sideways
 
 /**
@@ -326,7 +326,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   }
   // A big family really is broad, and a broad row honestly needs a tall climb,
   // so the ceiling on a row is cut from the crown itself instead of a constant.
-  const rowCap = Math.max(ROW_MAX, crownW * 0.32);
+  const rowCap = Math.max(ROW_MAX, crownW * 0.16);
   // A wife seated over her husband stands inside the gap to the row above, so
   // that row has to clear her head as well, or her circle runs into a son's.
   const floor = [];

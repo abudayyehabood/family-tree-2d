@@ -8,7 +8,7 @@ export function Limb({ from, to }) {
   const curve = curveOf(pts);
   // it swells where it leaves its father, then tapers all the way to the child
   const w0 = Math.min(from.w, to.w * 1.5);
-  const w1 = Math.max(4, to.w * 0.82);
+  const w1 = Math.max(8, to.w * 0.86);
   const rough = 0.16;
   const grain = w0 > 7 ? grainOn(curve, w0, w1, seed, Math.min(7, Math.round(w0 / 2.6))) : [];
   // the lit side of the limb: the same curve, thinner, nudged off-centre

@@ -50,38 +50,35 @@ export function PersonShape({ node, selected, onSelect, onFocus }) {
 const radius = (n) => n.r || NODE_R;
 
 /**
- * The tie between two people who married: a real piece of wood, cut and drawn
- * the same way every limb on this tree is cut — it leaves the husband thick,
- * bends, and tapers into his wife — only in its own colour, so at a glance you
- * can tell the wood that carries the blood from the wood that carries a
- * marriage. A thin straight rod between two circles reads as a wire, not a tree.
+ * The tie between two people who married is not a branch of its own: it is a
+ * twig that forks off the husband's own stem, just under him, climbs, and
+ * carries his wife. Same wood, a lighter shade of it, so you can still tell the
+ * wood that carries the blood from the wood that carries a marriage.
  */
 export function MarriageBar({ a, b }) {
-  const dx = b.x - a.x, dy = b.y - a.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len, uy = dy / len;
-  // both ends start well inside the circles, so the wood looks grown out of the
-  // person rather than propped against them; the discs are drawn over it
-  const p0 = { x: a.x + ux * radius(a) * 0.55, y: a.y + uy * radius(a) * 0.55 };
-  const p1 = { x: b.x - ux * radius(b) * 0.7, y: b.y - uy * radius(b) * 0.7 };
-  const span = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
-  // no branch runs dead straight: it leaves flat, lifts across its own line,
-  // and comes back down into her. Two handles make that bend smooth.
-  const bow = Math.min(11, span * 0.3);
-  const nx = -uy, ny = ux;
-  const arc = (f, k) => ({
-    x: p0.x + (p1.x - p0.x) * f + nx * bow * k,
-    y: p0.y + (p1.y - p0.y) * f + ny * bow * k,
-  });
-  const pts = [p0, arc(0.3, -1), arc(0.72, -0.72), p1];
+  const ra = radius(a), rb = radius(b);
+  // it leaves the man's stem below him, the way every limb leaves its father
+  const p0 = { x: a.x, y: a.y + ra * 0.62 };
+  const dx = b.x - p0.x, dy = b.y - p0.y;
+  const span = Math.hypot(dx, dy) || 1;
+  const p1 = { x: b.x - (dx / span) * rb * 0.66, y: b.y - (dy / span) * rb * 0.66 };
+  // straight up out of the fork, then over and down into her: a real crotch,
+  // not a rod laid between two circles
+  const lift = Math.max(ra * 0.9, span * 0.55);
+  const pts = [
+    p0,
+    { x: p0.x, y: p0.y - lift },
+    { x: p1.x, y: p1.y + Math.min(lift * 0.5, Math.abs(dy) * 0.4 + ra * 0.5) },
+    p1,
+  ];
   const seed = hashNum(`${a.id}-${b.id}`);
   const curve = curveOf(pts);
-  const w0 = Math.max(12, radius(a) * 0.46);
-  const w1 = Math.max(7, radius(b) * 0.34);
+  const w0 = Math.max(13, ra * 0.5);
+  const w1 = Math.max(8, rb * 0.38);
   const rough = 0.14;
   // the lit side of the wood: the same curve, thinner, nudged up and left
-  const lift = { x: -w0 * 0.16, y: -w0 * 0.16 };
-  const hi = curveOf(pts.map((q) => ({ x: q.x + lift.x, y: q.y + lift.y })));
+  const lit = { x: -w0 * 0.16, y: -w0 * 0.16 };
+  const hi = curveOf(pts.map((q) => ({ x: q.x + lit.x, y: q.y + lit.y })));
   const grain = grainOn(curve, w0, w1, seed, 4);
 
   return (
