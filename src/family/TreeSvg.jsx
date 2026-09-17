@@ -65,7 +65,7 @@ export function TreeSvg({
       {edges.map(({ from, to }) => (
         <Limb key={`${from}-${to}`} from={nodes.get(from)} to={nodes.get(to)} />
       ))}
-      <Foliage nodes={nodes} />
+      <Foliage nodes={nodes} edges={edges} />
       {marriages.map(({ a, b }) => (
         <MarriageBar key={`${a}-${b}`} a={nodes.get(a)} b={nodes.get(b)} />
       ))}

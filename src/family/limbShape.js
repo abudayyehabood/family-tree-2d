@@ -12,7 +12,7 @@ export function sway(str) {
 }
 
 const REACH = 0.42;   // how far along itself a branch carries its own heading
-const BOW = 0.26;     // and how far it leans off the straight line on the way
+const BOW = 0.12;    // and how far it leans off the straight line on the way
 
 /**
  * No branch on a real tree is a ruler line. This one leaves its father growing

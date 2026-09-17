@@ -6,12 +6,13 @@ export function Limb({ from, to }) {
   const seed = hashNum(`${from.id}>${to.id}`);
   const pts = limbCurve(from, to, inset(to));
   const curve = curveOf(pts);
-  // It swells where it leaves its father, then thins the whole way to the
-  // child. A branch that ends as thick as it started is a pipe; the tip has to
-  // come down to a twig, and the difference between a limb carrying thirty
-  // names and one carrying a single son has to be plain at a glance.
-  const w0 = Math.min(from.w * 0.94, to.w * 1.45);
-  const w1 = Math.max(5, to.w * 0.52);
+  // A limb is exactly as thick as the family it is carrying at each end, and
+  // nothing is added on top of that. The taper is real -- every fork hands
+  // half its weight to each side, so the wood thins by itself the whole way
+  // out -- and because the two ends agree, one stretch of wood runs into the
+  // next without a step or a pinch at the fork.
+  const w0 = from.w;
+  const w1 = to.w;
   const rough = 0.16;
   const grain = w0 > 7 ? grainOn(curve, w0, w1, seed, Math.min(7, Math.round(w0 / 2.6))) : [];
   // the lit side of the limb: the same curve, thinner, nudged off-centre
