@@ -6,7 +6,7 @@ export const TRUNK_TOP_W = 40;
 export const TRUNK_BASE_W = 104;
 export const TRUNK_H = 250;
 export const ROOT_Y = -14;
-const PAD = 56;
+const PAD = 300;   // room for the canopy line, which is drawn outside the wood
 
 const ROW_H = 96;               // one generation straight up from the last
 const ROW_MAX = 210;             // a wide family needs tall rows or it goes flat

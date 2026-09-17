@@ -37,6 +37,11 @@ export const TREE_CSS = `
 .circle-person.is-female .disc-name { fill: #4a1c31; }
 .disc-year { font-size: 9px; fill: #6f6152; font-family: system-ui, sans-serif; }
 
+.canopy { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.canopy-edge { stroke: #4a453c; opacity: 0.6; }
+.canopy-sweep { stroke: #4a453c; opacity: 0.32; }
+.canopy-hatch { stroke: #4a453c; opacity: 0.38; }
+
 .wed-wood { fill: #9a6630; }
 .wed-light { fill: #c79154; opacity: 0.65; }
 .wed-grain { fill: none; stroke: #7a4a22; stroke-width: 1.1; stroke-linecap: round; opacity: 0.6; }
@@ -45,6 +50,7 @@ export const TREE_CSS = `
    frame, and none of this fine detail is readable mid-gesture anyway, so it is
    dropped until the fingers lift. */
 .is-moving .leaf-vein, .is-moving .leaf-rib, .is-moving .grain,
-.is-moving .fissure, .is-moving .wed-grain, .is-moving .knot-core, .is-moving .speck { display: none; }
+.is-moving .fissure, .is-moving .wed-grain, .is-moving .canopy-hatch,
+.is-moving .canopy-sweep, .is-moving .knot-core, .is-moving .speck { display: none; }
 .is-moving .leaf { stroke: none; }
 `;
