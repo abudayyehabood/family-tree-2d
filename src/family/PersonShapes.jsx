@@ -1,5 +1,5 @@
 import { NODE_R } from './layout2d';
-import { curveOf, grainOn, hashNum, ribbonOn } from './shapes';
+import { curveOf, grainOn, hashNum, ribbonOn, ribbonPart } from './shapes';
 
 /** Break a name into at most two lines that fit inside the circle. */
 export function fitName(name = '', r = NODE_R) {
@@ -49,11 +49,25 @@ export function PersonShape({ node, selected, onSelect, onFocus }) {
 
 const radius = (n) => n.r || NODE_R;
 
+/** Where along the curve the wood leaves one circle and meets the other. */
+function gapRange(curve, a, b) {
+  const out = [0, 1];
+  const steps = 40;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const p = curve.at(t);
+    if (Math.hypot(p.x - a.x, p.y - a.y) < radius(a)) out[0] = t;
+    else if (out[1] === 1 && Math.hypot(p.x - b.x, p.y - b.y) < radius(b)) out[1] = t;
+  }
+  return out;
+}
+
 /**
- * The tie between two people who married is not a branch of its own: it is a
- * twig that forks off the husband's own stem, just under him, climbs, and
- * carries his wife. Same wood, a lighter shade of it, so you can still tell the
- * wood that carries the blood from the wood that carries a marriage.
+ * The tie between two people who married is a twig that forks off the
+ * husband's own stem, just under him, climbs, and carries his wife. It is
+ * ordinary wood like every other branch; only the open stretch between the two
+ * circles is tinted, so at a glance you can see the marriage without the tree
+ * growing a strange coloured limb.
  */
 export function MarriageBar({ a, b }) {
   const ra = radius(a), rb = radius(b);
@@ -80,12 +94,15 @@ export function MarriageBar({ a, b }) {
   const lit = { x: -w0 * 0.16, y: -w0 * 0.16 };
   const hi = curveOf(pts.map((q) => ({ x: q.x + lit.x, y: q.y + lit.y })));
   const grain = grainOn(curve, w0, w1, seed, 4);
+  const [t0, t1] = gapRange(curve, a, b);
 
   return (
     <g className="marriage">
-      <path d={ribbonOn(curve, w0, w1, 30, seed % 100, rough)} className="wed-wood" />
-      <path d={ribbonOn(hi, w0 * 0.34, w1 * 0.3, 22, seed % 100, rough)} className="wed-light" />
-      {grain.map((d, k) => <path key={k} d={d} className="wed-grain" />)}
+      <path d={ribbonOn(curve, w0, w1, 30, seed % 100, rough)} className="limb-wood" />
+      <path d={ribbonOn(hi, w0 * 0.34, w1 * 0.3, 22, seed % 100, rough)} className="wood-light" />
+      {grain.map((d, k) => <path key={k} d={d} className="grain" />)}
+      <path d={ribbonPart(curve, w0, w1, t0, t1, 22, seed % 100, rough)} className="wed-wood" />
+      <path d={ribbonPart(hi, w0 * 0.34, w1 * 0.3, t0, t1, 18, seed % 100, rough)} className="wed-light" />
     </g>
   );
 }

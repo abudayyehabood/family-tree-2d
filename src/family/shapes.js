@@ -33,9 +33,18 @@ export function curveOf(p) {
  * taper from thick elder to thin twig is the whole look.
  */
 export function ribbonOn(curve, w0, w1, steps = 18, seed = 0, rough = 0) {
+  return ribbonPart(curve, w0, w1, 0, 1, steps, seed, rough);
+}
+
+/**
+ * One stretch of that same ribbon, from t0 to t1. The width and the roughness
+ * are read off the whole limb, not off the piece, so a piece drawn over the
+ * limb lands exactly on top of it and shows no fringe at the seam.
+ */
+export function ribbonPart(curve, w0, w1, t0, t1, steps = 18, seed = 0, rough = 0) {
   const left = [], right = [];
   for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
+    const t = t0 + ((t1 - t0) * i) / steps;
     const p = curve.at(t);
     const d = curve.dir(t);
     const len = Math.hypot(d.x, d.y) || 1;

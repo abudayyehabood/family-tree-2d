@@ -8,9 +8,9 @@ export const TRUNK_H = 250;
 export const ROOT_Y = -14;
 const PAD = 56;
 
-const ROW_H = 128;               // one generation straight up from the last
-const ROW_MAX = 300;             // a wide family needs tall rows or it goes flat
-const SLOPE = 0.6;               // how steeply a limb must climb against its reach
+const ROW_H = 96;               // one generation straight up from the last
+const ROW_MAX = 210;             // a wide family needs tall rows or it goes flat
+const SLOPE = 0.45;               // how steeply a limb must climb against its reach
 const JOINT_X = 0.42;            // how far out a staged fork leaves its father
 const WED_GAP = 40;              // husband to wife: room for the tie to show as wood
 const UP_GAP = 34;               // the first wife sits just over him, on a short tie
@@ -18,6 +18,13 @@ const H_GAP = 22;                // clear air between two households side by sid
 const BRANCH_W0 = 34;            // the limbs that leave the trunk, good and thick
 const LIMB_MIN_W = 10;          // even the last twig is wood, not a wire
 const UP = Math.PI / 2;          // every limb climbs; nothing fans sideways
+
+/** A small, stable number in [0,1) for any id, so no two limbs are twins. */
+const wobble = (str) => {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return ((h >>> 0) % 1000) / 1000;
+};
 
 /**
  * The crown is built in rows, one row per generation, climbing off the trunk.
@@ -293,7 +300,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       const kids = group.map((e) => nodes.get(e.to));
       const mid = kids.reduce((s2, k) => s2 + k.x, 0) / kids.length;
       const jid = `joint-${pid}-${side}`;
-      const jx = parent.x + (mid - parent.x) * JOINT_X;
+      const jx = parent.x + (mid - parent.x) * (JOINT_X + wobble(jid) * 0.26);
       // The bough takes the same share of the climb as it takes of the reach,
       // so splitting a limb in two never makes either half lie flatter than the
       // straight limb would have been.
@@ -324,7 +331,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   }
   // A big family really is broad, and a broad row honestly needs a tall climb,
   // so the ceiling on a row is cut from the crown itself instead of a constant.
-  const rowCap = Math.max(ROW_MAX, crownW * 0.16);
+  const rowCap = Math.max(ROW_MAX, crownW * 0.11);
   // A wife seated over her husband stands inside the gap to the row above, so
   // that row has to clear her head as well, or her circle runs into a son's.
   const floor = [];
@@ -344,6 +351,14 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   for (let d = 1; d < rowH.length; d++) rowY[d] = rowY[d - 1] - rowH[d];
   for (const n of nodes.values()) {
     n.y = (rowY[n.depth] ?? rowY[rowY.length - 1]) + (n.seatDy || 0);
+  }
+  // No real tree grows in tidy shelves. Every household is lifted a little off
+  // its row, always upwards so the gap below it only ever grows, and a wife is
+  // lifted with her husband so their tie keeps its length.
+  for (const n of nodes.values()) {
+    if (!n.depth || n.isJoint) continue;
+    const h = rowH[n.depth] || ROW_H;
+    n.y -= wobble(n.partnerId || n.id) * h * 0.14;
   }
   for (const n of nodes.values()) {
     if (!n.jointOf) continue;
