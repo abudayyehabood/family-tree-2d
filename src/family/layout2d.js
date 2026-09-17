@@ -23,8 +23,6 @@ const LIMB_MIN_W = 17;           // even the last twig is wood, not a wire
 // thin or flat, so nothing below is cut to a fixed ceiling: the trunk, the
 // rows and the wood are all cut from the crown the tree actually has.
 const LIMB_TAPER = 0.62;         // how slowly a limb gives up its wood downstream
-const DOME = 0.8;                // how far an outward-reaching bough hangs down
-const MIN_RISE = 58;             // a child is never level with the one before him
 const UP = Math.PI / 2;          // every limb climbs; nothing fans sideways
 
 /** A small, stable number in [0,1) for any id, so no two limbs are twins. */
@@ -366,10 +364,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       Math.min(rowCap, Math.max(ROW_H, (need[d] || 0) + 2 * NODE_R)));
     // and the slice on the end is the room the row keeps free so a household
     // can ride up off it without ever reaching the row above.
-    // and a little headroom on top of that, which the crown spends when it is
-    // bent: without spare rise there is nothing for an outer bough to give up,
-    // and the top of the tree comes out cut flat across.
-    rowH[d] = base * (1 + SWAY) + crownW * 0.014;
+    rowH[d] = base * (1 + SWAY);
   }
   const rowY = [ROOT_Y + GOLD_R - 4];
   for (let d = 1; d < rowH.length; d++) rowY[d] = rowY[d - 1] - rowH[d];
@@ -386,87 +381,10 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const slack = ((rowH[n.depth] || ROW_H) * SWAY) / (1 + SWAY);
     n.y -= wobble(n.partnerId || n.id) * slack;
   }
-
-  // ---- and then the shelves are bent into a crown ----
-  // Rows are how the drawing is worked out; they are not how a tree looks. A
-  // real tree is a dome: the boughs in the middle go up, the ones on the
-  // outside lean out and hang low, and the tips together draw a round edge
-  // against the sky. So every person is let down by how far out he stands,
-  // which turns a stack of shelves into a canopy without moving anyone
-  // sideways or crossing a single limb.
-  let halfW = 1;
-  for (const n of nodes.values()) if (!n.isJoint) halfW = Math.max(halfW, Math.abs(n.x));
-
-  const liftSub = (id, dy) => {
-    const n = nodes.get(id);
-    if (!n) return;
-    n.y -= dy;
-    for (const w of wivesOf(id)) { const wn = nodes.get(w.id); if (wn) wn.y -= dy; }
-    for (const k of childrenOf.get(id) ?? []) liftSub(k, dy);
-  };
-
-  // A bough that reaches outward also hangs lower: it is carrying its own
-  // weight further from the trunk. Every branch is let down by a share of how
-  // far out it reached, and the whole branch goes down together, so nothing
-  // inside it moves against anything else. Do that at every fork and the
-  // shelves bend into a canopy: the middle stands tall, the outside leans out
-  // and sags, and the tips draw a round edge instead of a straight one.
-  const bend = (id) => {
-    for (const k of childrenOf.get(id) ?? []) {
-      const kid = nodes.get(k);
-      const mid = tree.people[k]?.motherId;
-      const mother = mid ? nodes.get(mid) : null;
-      const src = mother && mother.partnerId === id ? mother : nodes.get(id);
-      const out = Math.abs(kid.x) - Math.abs(src.x);
-      // A bough may lean out, but it may never lie down: whatever it has left
-      // after the drop still has to climb at least as steeply as SLOPE asks,
-      // or the bottom of the crown flattens into a washing line.
-      const reach = Math.abs(kid.x - src.x);
-      const keep = Math.max(MIN_RISE, reach * SLOPE);
-      const room = src.y - kid.y - keep;
-      const drop = Math.max(0, Math.min(out * DOME * (1 - Math.abs(kid.x) / (halfW * 2.4)), room));
-      if (drop > 0) liftSub(k, -drop);
-      bend(k);
-    }
-  };
-  bend(rootId);
-
-  // Bending the crown lets a whole bough down, and now and then that sets one
-  // family's tip beside a cousin's instead of above it. So the finished crown
-  // is swept once more and any two circles that touch are parted by lifting
-  // the higher of the two, and everything it carries, until they clear. A few
-  // passes settle it; a tree this size has only ever needed one.
-  const people = [...nodes.values()].filter((n) => !n.isJoint);
-  const subject = (n) => (n.isSpouse ? n.partnerId : n.id);
-  for (let pass = 0; pass < 6; pass++) {
-    const byX = people.slice().sort((a, b) => a.x - b.x);
-    let moved = false;
-    for (let i = 0; i < byX.length; i++) {
-      const a = byX[i];
-      for (let j = i + 1; j < byX.length; j++) {
-        const b = byX[j];
-        const want = a.r + b.r + 12;
-        const dx = b.x - a.x;
-        if (dx >= want) break;
-        const dy = Math.abs(a.y - b.y);
-        if (Math.hypot(dx, dy) >= want) continue;
-        const high = a.y <= b.y ? a : b, low = high === a ? b : a;
-        const id = subject(high);
-        if (id === rootId || subject(low) === id) continue;
-        liftSub(id, Math.sqrt(want * want - dx * dx) - dy + 1);
-        moved = true;
-      }
-    }
-    if (!moved) break;
-  }
-
-  // the forks are hung last, so they ride on wood that has already settled
   for (const n of nodes.values()) {
     if (!n.jointOf) continue;
     const parent = nodes.get(n.jointOf);
-    const kids = edges.filter((e) => e.from === n.id).map((e) => nodes.get(e.to));
-    const top = Math.min(...kids.map((k) => k.y));
-    n.y = parent.y + (top - parent.y) * n.climbOf;
+    n.y = parent.y - (rowH[parent.depth + 1] || ROW_H) * n.climbOf;
   }
 
   // ---- bounds ----
