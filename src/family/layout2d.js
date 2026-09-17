@@ -22,6 +22,7 @@ const ROOM = 92;                 // how much paper a person keeps to himself
 const SHOVE = 0.55;              // how hard two of them push each other apart
 const PULL = 0.5;                // how hard a branch holds its own length
 const OUTWARD = 0.9;             // and how hard the whole crown opens away from the trunk
+const STEP = ROOM;               // the furthest anyone moves in one round
 const SETTLE = 520;              // how long the wood is left to find its place
 const FLOOR = 210;               // nothing droops further than this below the fork
 
@@ -265,7 +266,12 @@ export function layoutTree(tree, childrenOf, spouseOf) {
             const d2 = ex * ex + ey * ey;
             if (d2 >= want * want) continue;
             const d = Math.sqrt(d2) || 0.01;
-            const push = ((want - d) / d) * SHOVE * 0.5;
+            // Ten brothers all start at the same fork, so d here is sometimes
+            // nothing at all. Unbounded, (want - d) / d hands that pair a
+            // force of tens of thousands, they fly apart, and the crown never
+            // comes back: a branch may never be shoved further than the room
+            // it was asking for in the first place.
+            const push = Math.min((want - d) / d, 1) * SHOVE * 0.5;
             add(i, -ex * push, -ey * push);
             add(j, ex * push, ey * push);
           }
@@ -296,7 +302,15 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const cool = 1 - 0.76 * (round / SETTLE);
     for (let i = 0; i < N; i++) {
       if (i === root) continue;
-      px[i] += dx[i] * cool; py[i] += dy[i] * cool;
+      // Everything pushing one name is added up before it moves, and in a
+      // thick part of the family that sum can be enormous. Nobody may cross
+      // more than his own room in a single round: the tree still settles, it
+      // simply cannot throw itself off the paper on the way.
+      let sx = dx[i] * cool, sy = dy[i] * cool;
+      const step = Math.hypot(sx, sy);
+      if (step > STEP) { sx = (sx / step) * STEP; sy = (sy / step) * STEP; }
+      if (!Number.isFinite(sx) || !Number.isFinite(sy)) { sx = 0; sy = 0; }
+      px[i] += sx; py[i] += sy;
       // nothing is allowed to hang down into the ground
       if (py[i] > ROOT_Y + FLOOR) py[i] = ROOT_Y + FLOOR;
     }
