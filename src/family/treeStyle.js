@@ -37,9 +37,9 @@ export const TREE_CSS = `
 .circle-person.is-female .disc-name { fill: #4a1c31; }
 .disc-year { font-size: 9px; fill: #6f6152; font-family: system-ui, sans-serif; }
 
-.wed-wood { fill: #7d4c2a; }
-.wed-light { fill: #a06a3e; opacity: 0.6; }
-.wed-grain { fill: none; stroke: #8a5c34; stroke-width: 1.1; stroke-linecap: round; opacity: 0.7; }
+.wed-wood { fill: #9a6630; }
+.wed-light { fill: #c79154; opacity: 0.65; }
+.wed-grain { fill: none; stroke: #7a4a22; stroke-width: 1.1; stroke-linecap: round; opacity: 0.6; }
 
 /* While a finger is dragging or pinching, the drawing is re-rasterised every
    frame, and none of this fine detail is readable mid-gesture anyway, so it is
