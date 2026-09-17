@@ -10,11 +10,12 @@ const PAD = 56;
 
 const ROW_H = 96;               // one generation straight up from the last
 const ROW_MAX = 210;             // a wide family needs tall rows or it goes flat
-const SLOPE = 0.45;               // how steeply a limb must climb against its reach
+const SLOPE = 0.72;              // how steeply a limb must climb against its reach
 const JOINT_X = 0.42;            // how far out a staged fork leaves its father
-const WED_GAP = 13;              // husband to wife: shoulder to shoulder, nothing more
+const WED_GAP = 20;              // husband to wife: the length of her little twig
+const WED_UP = 1.75;             // and how far that twig lifts her off his row
 const H_GAP = 30;                // clear air between two households side by side
-const SWAY = 0.34;               // how much a household may ride off its own row
+const SWAY = 0.3;                // how much a household may ride off its own row
 const BRANCH_W0 = 34;            // the limbs that leave the trunk, good and thick
 const LIMB_MIN_W = 10;          // even the last twig is wood, not a wire
 const UP = Math.PI / 2;          // every limb climbs; nothing fans sideways
@@ -78,9 +79,9 @@ export function layoutTree(tree, childrenOf, spouseOf) {
 
   /**
    * Where the man and each of his wives sit, measured from the centre of the
-   * household. Every wife stands beside him on his own row, almost touching:
-   * first to his right, second to his left, and so on outwards, so the
-   * household reads as one row of circles and never stacks.
+   * household. Each wife sits on the end of her own small twig off his stem,
+   * up and out to the side: first to his right, second to his left, and so on
+   * outwards, so a marriage reads as a little branch and not as a rod.
    */
   const seatsOf = (id) => {
     const r = discR(id), sr = wifeR(id);
@@ -88,13 +89,15 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const seats = [];
     let rightEdge = r, leftEdge = r;
     wives.forEach((w, i) => {
+      // the further out a twig starts, the higher it has carried her
+      const dy = -(sr * WED_UP + Math.floor(i / 2) * sr * 0.55);
       if (i % 2 === 0) {                              // 1st, 3rd ... to his right
         rightEdge += WED_GAP + sr;
-        seats.push({ id: w.id, dx: rightEdge, dy: 0 });
+        seats.push({ id: w.id, dx: rightEdge, dy });
         rightEdge += sr;
       } else {                                        // 2nd, 4th ... to his left
         leftEdge += WED_GAP + sr;
-        seats.push({ id: w.id, dx: -leftEdge, dy: 0 });
+        seats.push({ id: w.id, dx: -leftEdge, dy });
         leftEdge += sr;
       }
     });
@@ -197,10 +200,18 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       }
     }
 
+    // Each run was pushed clear of the one before it, so a man with several
+    // wives ends up standing at the left edge of his own children instead of
+    // under the middle of them, and his limbs have to travel halfway across
+    // the drawing. Slide the whole fan back so it sits centred on him: that
+    // one line is the difference between a tree and a pile of cables.
+    const mid = (left[0] + right[0]) / 2;
+    for (let d = 0; d < left.length; d++) { left[d] -= mid; right[d] -= mid; }
+
     const packed = {
       left: [-half, ...left],
       right: [half, ...right],
-      kids: kids.map((k) => offs.get(k)),
+      kids: kids.map((k) => offs.get(k) - mid),
     };
     shape.set(id, packed);
     return packed;
@@ -240,8 +251,9 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     for (const seat of seats.wives) {
       nodes.set(seat.id, {
         id: seat.id, person: byId.get(seat.id), depth, angle: UP, r: wifeR(id), w: 0,
-        x: anchor + seat.dx, y: 0,
+        x: anchor + seat.dx, y: seat.dy,
         isLeaf: false, isSpouse: true, isFounder: node.isFounder, partnerId: id,
+        seatDy: seat.dy,
       });
       marriages.push({ a: id, b: seat.id });
     }
@@ -323,18 +335,29 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   // A big family really is broad, and a broad row honestly needs a tall climb,
   // so the ceiling on a row is cut from the crown itself instead of a constant.
   const rowCap = Math.max(ROW_MAX, crownW * 0.11);
+  // A wife rides a twig up off her husband's row, so the row above has to
+  // clear her head as well or her circle runs into a son's.
+  const floor = [];
+  for (const n of nodes.values()) {
+    if (!n.seatDy) continue;
+    floor[n.depth + 1] = Math.max(floor[n.depth + 1] || 0,
+      Math.abs(n.seatDy) + n.r + NODE_R + H_GAP);
+  }
   const rowH = [0];
   for (let d = 1; d < crown.left.length; d++) {
     // the limb stops at the rim of each circle, so the climb it actually gets
     // is a disc shorter than the gap between the rows; pay that back here.
-    // The extra slice on the end is the room every row keeps free so a
-    // household can ride up off it without ever reaching the row above.
-    rowH[d] = Math.min(rowCap, Math.max(ROW_H, (need[d] || 0) + 2 * NODE_R))
-      + SWAY * ROW_H;
+    const base = Math.max(floor[d] || 0,
+      Math.min(rowCap, Math.max(ROW_H, (need[d] || 0) + 2 * NODE_R)));
+    // and the slice on the end is the room the row keeps free so a household
+    // can ride up off it without ever reaching the row above.
+    rowH[d] = base * (1 + SWAY);
   }
   const rowY = [ROOT_Y + GOLD_R - 4];
   for (let d = 1; d < rowH.length; d++) rowY[d] = rowY[d - 1] - rowH[d];
-  for (const n of nodes.values()) n.y = rowY[n.depth] ?? rowY[rowY.length - 1];
+  for (const n of nodes.values()) {
+    n.y = (rowY[n.depth] ?? rowY[rowY.length - 1]) + (n.seatDy || 0);
+  }
   // No real tree grows in tidy shelves, and a row of limbs all cut to one
   // length is the first thing that gives a drawing away. Every household rides
   // up off its own row by its own amount, never more than the slack the row
@@ -342,7 +365,8 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   // rides with her husband, so the two of them stay shoulder to shoulder.
   for (const n of nodes.values()) {
     if (!n.depth || n.isJoint) continue;
-    n.y -= wobble(n.partnerId || n.id) * SWAY * ROW_H;
+    const slack = ((rowH[n.depth] || ROW_H) * SWAY) / (1 + SWAY);
+    n.y -= wobble(n.partnerId || n.id) * slack;
   }
   for (const n of nodes.values()) {
     if (!n.jointOf) continue;

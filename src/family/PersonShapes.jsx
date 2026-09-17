@@ -50,34 +50,36 @@ export function PersonShape({ node, selected, onSelect, onFocus }) {
 const radius = (n) => n.r || NODE_R;
 
 /**
- * A wife stands right beside her husband, so the tie between them is only the
- * short stretch of wood in the gap between the two rims. No arch over his
- * head, no extra limb: just the piece of the same tree that joins them, in a
- * lighter shade so a marriage is never mistaken for a descent.
+ * A wife is carried on her own small branch: a twig that leaves the low side
+ * of her husband's stem, climbs, and sets her down just above and beside him.
+ * It is built exactly like every other limb, only short and thin, so a
+ * marriage reads as a little branch of the same tree and never as a rod laid
+ * between two circles.
  */
 export function MarriageBar({ a, b }) {
   const ra = radius(a), rb = radius(b);
-  const dx = b.x - a.x, dy = b.y - a.y;
-  const span = Math.hypot(dx, dy) || 1;
-  const ux = dx / span, uy = dy / span;
-  // it starts a little inside each circle, so the seam is hidden under the rim
-  const p0 = { x: a.x + ux * (ra - 3), y: a.y + uy * (ra - 3) };
-  const p1 = { x: b.x - ux * (rb - 3), y: b.y - uy * (rb - 3) };
+  const side = Math.sign(b.x - a.x) || 1;
+  const foot = { x: a.x + side * ra * 0.34, y: a.y + ra * 0.5 };
+  const head = { x: b.x, y: b.y + rb * 0.86 };
+  const rise = Math.max(26, foot.y - head.y);
+  const pts = [
+    foot,
+    { x: foot.x + side * 4, y: foot.y - rise * 0.55 },
+    { x: head.x - side * 5, y: head.y + rise * 0.5 },
+    head,
+  ];
   const seed = hashNum(`${a.id}-${b.id}`);
-  // a hair of sag, the way a short piece of wood between two boughs sits
-  const sag = Math.min(7, span * 0.06) * (seed % 2 ? 1 : -1);
-  const mid = { x: (p0.x + p1.x) / 2 - uy * sag, y: (p0.y + p1.y) / 2 + ux * sag };
-  const curve = curveOf([p0, mid, p1]);
-  const w0 = Math.max(14, ra * 0.52);
-  const w1 = Math.max(12, rb * 0.5);
-  const rough = 0.1;
-  const lit = { x: -w0 * 0.14, y: -w0 * 0.14 };
-  const hi = curveOf([p0, mid, p1].map((q) => ({ x: q.x + lit.x, y: q.y + lit.y })));
+  const curve = curveOf(pts);
+  const w0 = Math.max(12, ra * 0.44);
+  const w1 = Math.max(8, rb * 0.3);
+  const rough = 0.14;
+  const lit = { x: -w0 * 0.16, y: -w0 * 0.16 };
+  const hi = curveOf(pts.map((q) => ({ x: q.x + lit.x, y: q.y + lit.y })));
 
   return (
     <g className="marriage">
-      <path d={ribbonOn(curve, w0, w1, 16, seed % 100, rough)} className="wed-wood" />
-      <path d={ribbonOn(hi, w0 * 0.3, w1 * 0.28, 12, seed % 100, rough)} className="wed-light" />
+      <path d={ribbonOn(curve, w0, w1, 22, seed % 100, rough)} className="wed-wood" />
+      <path d={ribbonOn(hi, w0 * 0.32, w1 * 0.3, 16, seed % 100, rough)} className="wed-light" />
       {grainOn(curve, w0, w1, seed, 3).map((d, k) => (
         <path key={k} d={d} className="wed-grain" />
       ))}
