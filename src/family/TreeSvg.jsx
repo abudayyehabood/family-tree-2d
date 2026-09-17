@@ -5,7 +5,6 @@ import { usePanZoom } from './usePanZoom';
 import { Limb } from './Limb';
 import { Foliage } from './Foliage';
 import { TrunkWood } from './Trunk';
-import { Canopy } from './Canopy';
 import { MarriageBar, PersonShape } from './PersonShapes';
 import { PersonPopover } from './PersonPopover';
 import { S } from './strings';
@@ -62,7 +61,6 @@ export function TreeSvg({
    */
   const scene = useMemo(() => (
     <>
-      <Canopy nodes={nodes} trunk={trunk} />
       <TrunkWood trunk={trunk} />
       {edges.map(({ from, to }) => (
         <Limb key={`${from}-${to}`} from={nodes.get(from)} to={nodes.get(to)} />
