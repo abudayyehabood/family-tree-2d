@@ -23,7 +23,7 @@ function leaf(key, p, deg, scale, tone) {
 
 /**
  * Every leaf on this tree belongs to a name. Someone with no children yet is a
- * leaf on a twig, so he carries a small tuft; anyone with children is a branch
+ * leaf on a twig, so he carries a couple of blades; anyone with children is a branch
  * and carries none. Nothing decorative is drawn on the bare wood, because a
  * leaf with no name behind it only pulls the eye away from the family.
  */
@@ -35,13 +35,15 @@ export function Foliage({ nodes, layer = 'front' }) {
     if (!n.isLeaf) continue;
     const seed = rnd01(n.id);
     const base = (-n.angle * 180) / Math.PI;
-    [-42, 0, 42].forEach((off, k) => {
+    // a pair, not a bunch: the sketch is bare wood, and every leaf covered up a
+    // stretch of the branch structure that is the thing worth looking at
+    [-46, 46].forEach((off, k) => {
       const deg = base + off + (seed - 0.5) * 16;
       const rad = (deg * Math.PI) / 180;
       const d = (n.r || 27) * 0.92;
       out.push(leaf(`${n.id}-tip-${k}`,
         { x: n.x + Math.cos(rad) * d, y: n.y + Math.sin(rad) * d },
-        deg, 0.7 + seed * 0.2, TONES[(k + Math.round(seed * 2)) % 3]));
+        deg, 0.58 + seed * 0.18, TONES[(k + Math.round(seed * 2)) % 3]));
     });
   }
 

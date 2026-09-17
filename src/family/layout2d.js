@@ -16,7 +16,10 @@ const WED_GAP = 62;              // husband to wife: how far her branch reaches 
 const WED_REACH = 1.6;           // and how much of that reach is her own branch
 const WED_UP = 3.4;              // how high that branch carries her off his row
 const H_GAP = 44;                // clear air between two households side by side
-const SWAY = 0.3;                // how much a household may ride off its own row
+const SWAY = 0.45;               // how much a household may ride off its own row
+const SWING = 16;                // and how far sideways it may lean out of its lane
+const CALM = 0.34;               // near the trunk the wood is orderly; only the
+                                 // outer twigs are allowed the full wander
 const BRANCH_W0 = 52;            // the limbs that leave the trunk, good and thick
 const LIMB_MIN_W = 17;           // even the last twig is wood, not a wire
 // A tree that is still being written into has to keep growing without going
@@ -287,6 +290,24 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   const shift = -nodes.get(rootId).x;
   for (const n of nodes.values()) n.x += shift;
 
+  // ---- and each household leans out of its lane by its own amount ----
+  // The packing gives every household a clear lane with H_GAP of air on each
+  // side of it. Spending a little under half of that air here is what turns a
+  // fan of evenly spaced children into branches that leave their father at
+  // different angles; the rest of the air is what keeps them off each other.
+  const lean = new Map();
+  for (const n of nodes.values()) {
+    if (!n.depth || n.isJoint || n.isSpouse) continue;
+    const d = (wobble(`swing-${n.id}`) - 0.5) * 2 * SWING
+      * (CALM + (1 - CALM) * (n.depth / Math.max(1, crown.left.length - 1)));
+    lean.set(n.id, d);
+    n.x += d;
+  }
+  // a wife leans with her husband, or her branch would stretch across his lane
+  for (const n of nodes.values()) {
+    if (n.isSpouse && lean.has(n.partnerId)) n.x += lean.get(n.partnerId);
+  }
+
   // ---- a child of a second wife hangs off his mother, not off his father ----
   // Only the limb moves, so you can see at a glance which wife a person came
   // from. With a single wife nothing changes.
@@ -372,14 +393,20 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     n.y = (rowY[n.depth] ?? rowY[rowY.length - 1]) + (n.seatDy || 0);
   }
   // No real tree grows in tidy shelves, and a row of limbs all cut to one
-  // length is the first thing that gives a drawing away. Every household rides
-  // up off its own row by its own amount, never more than the slack the row
-  // was given, so its branch is longer and its neighbour's shorter. A wife
-  // rides with her husband, so the two of them stay shoulder to shoulder.
+  // length is the first thing that gives a drawing away. A generation keeps its
+  // own band of the page, but inside that band nobody is pegged to a shelf:
+  // each household leaves its father at its own angle, one riding high above
+  // its row, the next drooping a little below it the way a lower limb does.
+  // Near the trunk the wood stays calm and orderly; the wander is given to the
+  // outer twigs, which is where a real tree carries it. A wife rides with her
+  // husband, so the two of them stay shoulder to shoulder.
+  const deepest = Math.max(1, crown.left.length - 1);
+  const wander = (depth) => CALM + (1 - CALM) * (depth / deepest);
   for (const n of nodes.values()) {
     if (!n.depth || n.isJoint) continue;
     const slack = ((rowH[n.depth] || ROW_H) * SWAY) / (1 + SWAY);
-    n.y -= wobble(n.partnerId || n.id) * slack;
+    // both ways off the row, so the band fills instead of hanging from a line
+    n.y += (wobble(n.partnerId || n.id) - 0.5) * 2 * slack * wander(n.depth);
   }
   for (const n of nodes.values()) {
     if (!n.jointOf) continue;
