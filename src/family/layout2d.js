@@ -16,18 +16,17 @@ const WED_GAP = 62;              // husband to wife: how far her branch reaches 
 const WED_REACH = 1.6;           // and how much of that reach is her own branch
 const WED_UP = 3.4;              // how high that branch carries her off his row
 const H_GAP = 44;                // clear air between two households side by side
-const SWAY = 0.45;               // how much a household may ride off its own row
-const SWING = 16;                // and how far sideways it may lean out of its lane
+const SWAY = 0.3;               // how much a household may ride off its own row
 const CALM = 0.34;               // near the trunk the wood is orderly; only the
                                  // outer twigs are allowed the full wander
-const BRANCH_W0 = 52;            // the limbs that leave the trunk, good and thick
-const LIMB_MIN_W = 17;           // even the last twig is wood, not a wire
+const TWIG_W = 26;               // the wood it takes to carry one single name
+const LIMB_MIN_W = TWIG_W;       // even the last twig is wood, not a wire
 // A tree that is still being written into has to keep growing without going
 // thin or flat, so nothing below is cut to a fixed ceiling: the trunk, the
 // rows and the wood are all cut from the crown the tree actually has.
-const LIMB_TAPER = 0.62;         // how slowly a limb gives up its wood downstream
+const LIMB_TAPER = 1;            // Leonardo: two branches equal the wood below
 const UP = Math.PI / 2;          // the heading a person is given before the fan
-const FAN = (168 * Math.PI) / 180; // how far round the crown opens off the trunk
+const FAN = (138 * Math.PI) / 180; // how far round the crown opens off the trunk
 
 /** A small, stable number in [0,1) for any id, so no two limbs are twins. */
 const wobble = (str) => {
@@ -104,7 +103,12 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       // no two of these branches are the same length or carry the same height
       const vary = 0.7 + wobble(w.id) * 0.7;
       const reach = WED_GAP + sr * WED_REACH * vary + Math.floor(i / 2) * sr * 0.8;
-      const dy = -(sr * WED_UP * vary + Math.floor(i / 2) * sr * 0.6);
+      // How far out her branch reaches is her own, but how high it carries her
+      // is not. Co-wives set at different heights end up out of order -- one
+      // further round the crown yet nearer the trunk than the other -- and the
+      // branch to one wife's children then has to swing across the branch to
+      // her co-wife's. Seated level, they cannot cross.
+      const dy = -sr * WED_UP;
       if ((i % 2 === 0) === (first === 1)) {          // out to his right
         rightEdge += reach;
         seats.push({ id: w.id, dx: rightEdge, dy });
@@ -237,11 +241,15 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   const crown = build(rootId);
   const crownW = Math.max(...crown.right) - Math.min(...crown.left);
 
-  // The trunk carries the crown, so it is cut to its size: a thin pole under a
-  // wide canopy, or a heavy bole under a narrow one, both read as wrong.
-  trunk.baseW = Math.max(110, crownW * 0.085);
-  trunk.topW = trunk.baseW * 0.5;
-  trunk.h = Math.max(240, crownW * 0.2);
+  // ---- how thick every piece of wood is, measured from the twig up ----
+  // Leonardo's rule, taken from the end where it is actually true: a twig that
+  // carries one name is one twig thick, and where branches meet, the wood
+  // under them is as thick as all of them together. Read that way the whole
+  // tree is one measurement -- a limb is never thicker than the family hanging
+  // off it, and the trunk is exactly the sum of the crown it holds. Cutting
+  // the trunk to the width of the drawing instead, as this used to, is what
+  // left a heavy stump standing under twigs it could never have grown.
+  const woodOf = (id) => TWIG_W * (tips.get(id) || 1) ** (LIMB_TAPER / 2);
 
   // ---- then every household is set down on the spot its shape was given ----
   // Only sideways. How high each row sits is decided afterwards, once we know
@@ -254,9 +262,6 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       x: anchor + seats.man,
       y: 0,
       angle: UP, r,
-      // Leonardo's rule: a limb is as thick as the wood it has to carry, so a
-      // branch with half the family on it is thinner than its father by the
-      // square root of its share. That taper is what makes wood look like wood.
       w: Math.max(LIMB_MIN_W, limbW),
       isFounder: id === rootId,
       isLeaf: (childrenOf.get(id) ?? []).length === 0,
@@ -275,39 +280,16 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       marriages.push({ a: id, b: seat.id });
     }
 
-    const kids = kidsOf(id);
-    const mine = tips.get(id) || 1;
-    kids.forEach((kid, i) => {
-      // One generation, one height. Letting the outer children sag put them
-      // down in the band the limbs travel through, and the wood crossed itself.
-      place(kid, anchor + shape.get(id).kids[i], depth + 1,
-        Math.max(LIMB_MIN_W, node.w * ((tips.get(kid) || 1) / mine) ** (LIMB_TAPER / 2)));
+    kidsOf(id).forEach((kid, i) => {
+      place(kid, anchor + shape.get(id).kids[i], depth + 1, woodOf(kid));
       edges.push({ from: id, to: kid });
     });
   };
-  place(rootId, 0, 0, Math.max(BRANCH_W0, trunk.topW * 0.86));
+  place(rootId, 0, 0, woodOf(rootId));
 
   // the trunk stands at x = 0, so slide the whole crown onto it
   const shift = -nodes.get(rootId).x;
   for (const n of nodes.values()) n.x += shift;
-
-  // ---- and each household leans out of its lane by its own amount ----
-  // The packing gives every household a clear lane with H_GAP of air on each
-  // side of it. Spending a little under half of that air here is what turns a
-  // fan of evenly spaced children into branches that leave their father at
-  // different angles; the rest of the air is what keeps them off each other.
-  const lean = new Map();
-  for (const n of nodes.values()) {
-    if (!n.depth || n.isJoint || n.isSpouse) continue;
-    const d = (wobble(`swing-${n.id}`) - 0.5) * 2 * SWING
-      * (CALM + (1 - CALM) * (n.depth / Math.max(1, crown.left.length - 1)));
-    lean.set(n.id, d);
-    n.x += d;
-  }
-  // a wife leans with her husband, or her branch would stretch across his lane
-  for (const n of nodes.values()) {
-    if (n.isSpouse && lean.has(n.partnerId)) n.x += lean.get(n.partnerId);
-  }
 
   // ---- a child of a second wife hangs off his mother, not off his father ----
   // Only the limb moves, so you can see at a glance which wife a person came
@@ -369,7 +351,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   }
   // A big family really is broad, and a broad row honestly needs a tall climb,
   // so the ceiling on a row is cut from the crown itself instead of a constant.
-  const rowCap = Math.max(ROW_MAX, crownW * 0.11);
+  const rowCap = Math.max(ROW_MAX, crownW * 0.07);
   // A wife rides a twig up off her husband's row, so the row above has to
   // clear her head as well or her circle runs into a son's.
   const floor = [];
@@ -432,27 +414,25 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   // How far out the first ring stands. Bending a row into an arc shortens it,
   // so the arc has to be long enough to still hold the row that was packed on
   // it or two cousins would be pushed into each other on the way round.
-  const ring = () => (reachW / FAN) * 1.12;
-
+  const far = Math.max(1, ...[...nodes.values()].map((n) => topRow - n.y));
+  // That clearance also hollows the crown out into a bare hoop if it is left
+  // alone, so the generations behind the first are spread further apart to
+  // fill it: a crown a couple of times deeper than the hole in the middle of
+  // it reads as a tree, a thin ring reads as an archway.
+  const fanAt = (a) => {
+    const R = (reachW / a) * 1.12;
+    const d = Math.min(2, Math.max(1, (2.4 * R) / far));
+    return { R, d, out: R + far * d };
+  };
   // The fan is opened as wide as it can go while the lowest limb still stays
   // clear of the trunk's own foot; nothing is allowed to droop into the ground.
-  let fan = FAN;
-  let R0 = ring();
+  let fan = FAN, { R: R0, d: deep, out: crownR } = fanAt(FAN);
   for (let i = 0; i < 24; i++) {
-    const deepest = Math.max(...[...nodes.values()].map((n) => topRow - n.y));
-    const drop = Math.sin(fan / 2 - Math.PI / 2 >= 0 ? fan / 2 - Math.PI / 2 : 0) * (R0 + deepest);
-    if (drop <= trunk.h * 0.42) break;
+    const past = Math.max(0, fan / 2 - Math.PI / 2);
+    if (Math.sin(past) * crownR <= crownR * 0.46 * 0.42) break;
     fan -= (4 * Math.PI) / 180;
-    R0 = (reachW / fan) * 1.12;
+    ({ R: R0, d: deep, out: crownR } = fanAt(fan));
   }
-
-  // The first ring has to stand well clear of the trunk or the arc it is bent
-  // around is too short to hold it. Left alone that hollows the crown out into
-  // a bare hoop, so the generations behind it are spread further apart to fill
-  // it: a crown three times deeper than the hole in the middle of it reads as
-  // a tree, a thin ring reads as an archway.
-  const far = Math.max(1, ...[...nodes.values()].map((n) => topRow - n.y));
-  const deep = Math.min(4, Math.max(1, (3 * R0) / far));
 
   for (const n of nodes.values()) {
     const th = Math.PI / 2 - ((n.x - cx) / reachW) * fan;
@@ -462,14 +442,92 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     n.y = cy - Math.sin(th) * r + R0;   // the founder himself stays on the trunk
   }
 
-  // The trunk was cut to the rows, but the rows have just been opened into a
-  // fan and the drawing is a good deal wider than they were. Cut it again, to
-  // the crown that is actually standing on it.
-  let openW = 1;
-  for (const n of nodes.values()) openW = Math.max(openW, Math.abs(n.x - cx) * 2);
-  trunk.baseW = Math.max(110, openW * 0.075);
-  trunk.topW = trunk.baseW * 0.5;
-  trunk.h = Math.max(240, openW * 0.17);
+  // The trunk is the wood the whole crown asks for and nothing more, flared at
+  // the foot the way a real bole is, standing about half the crown's own reach
+  // clear of the ground so the tree is a tree and not a bush set on a post.
+  trunk.topW = woodOf(rootId) * 1.12;
+  trunk.baseW = trunk.topW * 1.9;
+  trunk.h = Math.max(240, crownR * 0.46);
+
+  // ---- and last, nobody is left standing in the path of somebody's branch ----
+  // Circles were kept off each other from the start, but wood is wide and a
+  // limb on its way past has every right to be where a cousin happens to be
+  // sitting. That is the collision you actually see. So every limb is walked
+  // against every circle that is not at either end of it, and anyone it runs
+  // through is moved straight out of its way -- with his own family carried
+  // along with him, or the branch feeding him would be torn off its course.
+  const brood = new Map();                        // a person and all below him
+  const kin = (id) => {
+    if (brood.has(id)) return brood.get(id);
+    const out = [id];
+    brood.set(id, out);
+    for (const e of edges) if (e.from === id) out.push(...kin(e.to));
+    for (const n of nodes.values()) if (n.partnerId === id) out.push(n.id);
+    return out;
+  };
+  const limbPts = (a, b) => {
+    const off = inset(b);
+    const p0 = { x: a.x, y: a.y };
+    const p3 = { x: b.x - Math.cos(b.angle) * off, y: b.y + Math.sin(b.angle) * off };
+    // the same curve the wood is drawn on, handles cut from the climb
+    const dx = p3.x - p0.x, dy = p3.y - p0.y;
+    const up = (th) => Math.max(30, dx * Math.cos(th) - dy * Math.sin(th)) * 0.45;
+    const ra = up(a.angle), rb = up(b.angle);
+    const c1 = { x: p0.x + Math.cos(a.angle) * ra, y: p0.y - Math.sin(a.angle) * ra };
+    const c2 = { x: p3.x - Math.cos(b.angle) * rb, y: p3.y + Math.sin(b.angle) * rb };
+    const out = [];
+    for (let i = 0; i <= 12; i++) {
+      const t = i / 12, u = 1 - t;
+      out.push({
+        x: u * u * u * p0.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p3.x,
+        y: u * u * u * p0.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p3.y,
+      });
+    }
+    return out;
+  };
+  const folk = [...nodes.values()].filter((n) => n.person);
+  for (let pass = 0; pass < 12; pass++) {
+    let moved = 0;
+    for (const edge of edges) {
+      const a = nodes.get(edge.from), b = nodes.get(edge.to);
+      const pts = limbPts(a, b);
+      const halfW = Math.max(a.w || TWIG_W, b.w || TWIG_W) / 2;
+      for (const c of folk) {
+        if (c.id === a.id || c.id === b.id) continue;
+        if (c.partnerId === a.id || c.partnerId === b.id) continue;
+        // the branch to a couple's own child leaves from between the two of
+        // them, so it passes close by both. That is the fork, not a collision.
+        if (a.partnerId === c.id || b.partnerId === c.id) continue;
+        // A limb growing out of his own family cannot be dodged by moving him:
+        // it would come with him. That one is pushed clear the other way.
+        const ours = kin(c.id).includes(a.id);
+        const want = (c.r || NODE_R) + halfW + 6;
+        let best = Infinity, nx = 0, ny = 0;
+        for (let i = 0; i < pts.length - 1; i++) {
+          const p = pts[i], q = pts[i + 1];
+          const dx = q.x - p.x, dy = q.y - p.y;
+          const len = dx * dx + dy * dy || 1;
+          const t = Math.max(0, Math.min(1, ((c.x - p.x) * dx + (c.y - p.y) * dy) / len));
+          const ex = c.x - (p.x + dx * t), ey = c.y - (p.y + dy * t);
+          const d = Math.hypot(ex, ey);
+          if (d < best) { best = d; nx = ex; ny = ey; }
+        }
+        if (best >= want) continue;
+        const len = Math.hypot(nx, ny) || 1;
+        const step = want - best;
+        const sign = ours ? -1 : 1;
+        const vx = (nx / len) * step * sign, vy = (ny / len) * step * sign;
+        const shove = ours ? kin(b.id) : kin(c.id);
+        if (ours && shove.includes(c.id)) continue;   // nothing left to separate
+        for (const id of shove) {
+          const k = nodes.get(id);
+          if (k) { k.x += vx; k.y += vy; }
+        }
+        moved++;
+      }
+    }
+    if (!moved) break;
+  }
 
   // ---- bounds ----
   const half = trunk.baseW * 2.6;

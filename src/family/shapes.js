@@ -77,12 +77,18 @@ export function limbCurve(from, to, off) {
   // the limb stops at the rim of the child's circle, measured back along the
   // way the child itself grows, not straight down the page
   const b = { x: to.x - Math.cos(ta) * off, y: to.y + Math.sin(ta) * off };
-  const reach = Math.max(30, Math.hypot(b.x - a.x, b.y - a.y)) * 0.45;
+  // Each handle is cut from the climb it is actually making, not from the whole
+  // distance travelled. Measured the other way a limb that reaches a long way
+  // sideways is given a huge handle, bulges out well past where it is going,
+  // and swings across the branch beside it on the way.
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const up = (th) => Math.max(30, dx * Math.cos(th) - dy * Math.sin(th)) * 0.45;
+  const ra = up(fa), rb = up(ta);
   // Both handles stay between the two ends, so the limb never doubles back. An
   // overshooting handle is what put those pointless loops in the wood.
   return [a,
-    { x: a.x + Math.cos(fa) * reach, y: a.y - Math.sin(fa) * reach },
-    { x: b.x - Math.cos(ta) * reach, y: b.y + Math.sin(ta) * reach },
+    { x: a.x + Math.cos(fa) * ra, y: a.y - Math.sin(fa) * ra },
+    { x: b.x - Math.cos(ta) * rb, y: b.y + Math.sin(ta) * rb },
     b];
 }
 

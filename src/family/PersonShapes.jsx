@@ -58,14 +58,24 @@ const radius = (n) => n.r || NODE_R;
  */
 export function MarriageBar({ a, b }) {
   const ra = radius(a), rb = radius(b);
-  const side = Math.sign(b.x - a.x) || 1;
-  const foot = { x: a.x + side * ra * 0.34, y: a.y + ra * 0.5 };
-  const head = { x: b.x, y: b.y + rb * 0.86 };
-  const rise = Math.max(26, foot.y - head.y);
+  // The crown is fanned out around the trunk, so a husband on the far edge of
+  // it is not standing upright on the page. His branch is built in his own
+  // frame instead: `out` is the way he himself grows and `across` is his
+  // shoulder line, and the same shape that used to be drawn straight up now
+  // leans over exactly as much as he does.
+  const th = a.angle ?? Math.PI / 2;
+  const out = { x: Math.cos(th), y: -Math.sin(th) };
+  const across = { x: -out.y, y: out.x };
+  const at = (p, u, v) => ({ x: p.x + across.x * u + out.x * v, y: p.y + across.y * u + out.y * v });
+  const side = Math.sign((b.x - a.x) * across.x + (b.y - a.y) * across.y) || 1;
+  const foot = at(a, side * ra * 0.34, -ra * 0.5);
+  const head = at(b, 0, -rb * 0.86);
+  // how far up his own stem the branch has to carry her, measured his way
+  const rise = Math.max(26, (head.x - foot.x) * out.x + (head.y - foot.y) * out.y);
   const pts = [
     foot,
-    { x: foot.x + side * 4, y: foot.y - rise * 0.55 },
-    { x: head.x - side * 5, y: head.y + rise * 0.5 },
+    at(foot, side * 4, rise * 0.55),
+    at(head, -side * 5, -rise * 0.5),
     head,
   ];
   const seed = hashNum(`${a.id}-${b.id}`);
@@ -76,7 +86,7 @@ export function MarriageBar({ a, b }) {
   const w0 = Math.max(16, a.w || ra * 0.7);
   const w1 = Math.max(13, (b.w || w0 * 0.8) * 0.9);
   const rough = 0.14;
-  const lit = { x: -w0 * 0.16, y: -w0 * 0.16 };
+  const lit = { x: -Math.abs(across.x) * w0 * 0.16 - w0 * 0.05, y: -w0 * 0.16 };
   const hi = curveOf(pts.map((q) => ({ x: q.x + lit.x, y: q.y + lit.y })));
 
   return (
