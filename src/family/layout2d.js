@@ -1,3 +1,5 @@
+import { limbHandles, sway } from './limbShape.js';
+
 /* ---- poster geometry: every person is a cream circle, like the reference ---- */
 export const NODE_R = 27;        // a person's circle
 export const SPOUSE_R = 24;      // the person they married, a touch smaller
@@ -26,7 +28,7 @@ const STEP = ROOM;               // the furthest anyone moves in one round
 const SETTLE = 520;              // how long the wood is left to find its place
 const FLOOR = 210;               // nothing droops further than this below the fork
 
-const TWIG_W = 24;               // the wood it takes to carry one single name
+const TWIG_W = 24;               // the room one single name's wood asks for
 const LIMB_MIN_W = TWIG_W;       // even the last twig is wood, not a wire
 
 /** A small, stable number in [0,1) for any id, so no two limbs are twins. */
@@ -148,7 +150,10 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   const dy = new Float64Array(list.length);
   const rad = new Float64Array(list.length);
   list.forEach((n, i) => { px[i] = n.x; py[i] = n.y; rad[i] = n.r + n.w / 2; });
-  const wires = links.map((l) => ({ a: held.get(l.from), b: held.get(l.to), rest: l.rest }));
+  const wires = links.map((l) => ({
+    a: held.get(l.from), b: held.get(l.to), rest: l.rest,
+    sway: sway(`${l.from}>${l.to}`),      // the lean it is drawn with, so it settles around it
+  }));
   const root = held.get(rootId);
 
   // Everybody is dropped into a grid of squares so that finding who is sitting
@@ -232,11 +237,8 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     wires.forEach((w, k) => {
       const ax = px[w.a], ay = py[w.a];
       const bx = px[w.b], by = py[w.b];
-      const ex = bx - ax, ey = by - ay;
-      const up = (th) => Math.max(30, ex * Math.cos(th) - ey * Math.sin(th)) * 0.45;
-      const ra = up(ang[w.a]), rb = up(ang[w.b]);
-      const c1x = ax + Math.cos(ang[w.a]) * ra, c1y = ay - Math.sin(ang[w.a]) * ra;
-      const c2x = bx - Math.cos(ang[w.b]) * rb, c2y = by + Math.sin(ang[w.b]) * rb;
+      const h = limbHandles(ax, ay, bx, by, ang[w.a], ang[w.b], w.sway);
+      const c1x = h.c1x, c1y = h.c1y, c2x = h.c2x, c2y = h.c2y;
       for (let c = 0; c < ALONG; c++) {
         const t = (c + 1) / (ALONG + 1), u = 1 - t;
         mx[k * ALONG + c] = u * u * u * ax + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * bx;
@@ -354,5 +356,11 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   };
 }
 
-/** Where a limb meets a person, measured back along its own heading. */
-export const inset = (n) => (n.r || NODE_R) * 0.94;
+/**
+ * Where a limb stops short of the person it carries. It is cut back well
+ * inside the circle, not to its rim: a branch leans on its way over, so it
+ * arrives at a slightly different angle than the one it is cut along, and a
+ * cut at the rim left a bare white notch between the wood and the name. The
+ * circle is painted over the wood afterwards, so the overlap never shows.
+ */
+export const inset = (n) => (n.r || NODE_R) * 0.45;

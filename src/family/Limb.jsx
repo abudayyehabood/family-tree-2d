@@ -6,9 +6,12 @@ export function Limb({ from, to }) {
   const seed = hashNum(`${from.id}>${to.id}`);
   const pts = limbCurve(from, to, inset(to));
   const curve = curveOf(pts);
-  // it swells where it leaves its father, then tapers all the way to the child
-  const w0 = Math.min(from.w, to.w * 1.5);
-  const w1 = Math.max(8, to.w * 0.86);
+  // It swells where it leaves its father, then thins the whole way to the
+  // child. A branch that ends as thick as it started is a pipe; the tip has to
+  // come down to a twig, and the difference between a limb carrying thirty
+  // names and one carrying a single son has to be plain at a glance.
+  const w0 = Math.min(from.w * 0.94, to.w * 1.45);
+  const w1 = Math.max(5, to.w * 0.52);
   const rough = 0.16;
   const grain = w0 > 7 ? grainOn(curve, w0, w1, seed, Math.min(7, Math.round(w0 / 2.6))) : [];
   // the lit side of the limb: the same curve, thinner, nudged off-centre

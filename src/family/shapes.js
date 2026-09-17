@@ -1,4 +1,5 @@
 import { ROOT_Y, TRUNK_BASE_W, TRUNK_H, TRUNK_TOP_W } from './layout2d';
+import { limbHandles, sway } from './limbShape';
 
 const qPoint = (a, c, b, t) => {
   const u = 1 - t;
@@ -63,12 +64,10 @@ export const ribbon = (a, c, b, w0, w1, steps, seed, rough) =>
   ribbonOn(curveOf([a, c, b]), w0, w1, steps, seed, rough);
 
 /**
- * The shape of a branch: it leaves its father growing along the way its father
- * grows, bends over, and comes into the child growing along the way the child
- * grows. That fork is what makes wood read as wood; a limb aimed straight at
- * the child reads as a cable. Neither end points up any more: a limb that
- * leaves the trunk sideways carries on sideways, and one that hangs off the
- * low edge of the crown leaves its father heading down.
+ * The shape of a branch. Where the wood actually goes is decided in
+ * limbShape.js, because the tree has to be settled around the curve it is
+ * really drawn as; here it is only cut back to the rim of the child's circle
+ * and handed over.
  */
 export function limbCurve(from, to, off) {
   const fa = from.angle ?? Math.PI / 2;
@@ -77,19 +76,8 @@ export function limbCurve(from, to, off) {
   // the limb stops at the rim of the child's circle, measured back along the
   // way the child itself grows, not straight down the page
   const b = { x: to.x - Math.cos(ta) * off, y: to.y + Math.sin(ta) * off };
-  // Each handle is cut from the climb it is actually making, not from the whole
-  // distance travelled. Measured the other way a limb that reaches a long way
-  // sideways is given a huge handle, bulges out well past where it is going,
-  // and swings across the branch beside it on the way.
-  const dx = b.x - a.x, dy = b.y - a.y;
-  const up = (th) => Math.max(30, dx * Math.cos(th) - dy * Math.sin(th)) * 0.45;
-  const ra = up(fa), rb = up(ta);
-  // Both handles stay between the two ends, so the limb never doubles back. An
-  // overshooting handle is what put those pointless loops in the wood.
-  return [a,
-    { x: a.x + Math.cos(fa) * ra, y: a.y - Math.sin(fa) * ra },
-    { x: b.x - Math.cos(ta) * rb, y: b.y + Math.sin(ta) * rb },
-    b];
+  const h = limbHandles(a.x, a.y, b.x, b.y, fa, ta, sway(`${from.id}>${to.id}`));
+  return [a, { x: h.c1x, y: h.c1y }, { x: h.c2x, y: h.c2y }, b];
 }
 
 function mulberry32(seed) {
