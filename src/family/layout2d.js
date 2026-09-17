@@ -12,8 +12,9 @@ const ROW_H = 96;               // one generation straight up from the last
 const ROW_MAX = 210;             // a wide family needs tall rows or it goes flat
 const SLOPE = 0.72;              // how steeply a limb must climb against its reach
 const JOINT_X = 0.42;            // how far out a staged fork leaves its father
-const WED_GAP = 20;              // husband to wife: the length of her little twig
-const WED_UP = 1.75;             // and how far that twig lifts her off his row
+const WED_GAP = 46;              // husband to wife: how far her branch reaches out
+const WED_REACH = 1.6;           // and how much of that reach is her own branch
+const WED_UP = 3.4;              // how high that branch carries her off his row
 const H_GAP = 30;                // clear air between two households side by side
 const SWAY = 0.3;                // how much a household may ride off its own row
 const BRANCH_W0 = 34;            // the limbs that leave the trunk, good and thick
@@ -88,15 +89,20 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const wives = wivesOf(id);
     const seats = [];
     let rightEdge = r, leftEdge = r;
+    // which way the first wife's branch leaves him is his own, so two brothers
+    // side by side never fork the same way
+    const first = wobble(`side-${id}`) < 0.5 ? 1 : -1;
     wives.forEach((w, i) => {
-      // the further out a twig starts, the higher it has carried her
-      const dy = -(sr * WED_UP + Math.floor(i / 2) * sr * 0.55);
-      if (i % 2 === 0) {                              // 1st, 3rd ... to his right
-        rightEdge += WED_GAP + sr;
+      // no two of these branches are the same length or carry the same height
+      const vary = 0.7 + wobble(w.id) * 0.7;
+      const reach = WED_GAP + sr * WED_REACH * vary + Math.floor(i / 2) * sr * 0.8;
+      const dy = -(sr * WED_UP * vary + Math.floor(i / 2) * sr * 0.6);
+      if ((i % 2 === 0) === (first === 1)) {          // out to his right
+        rightEdge += reach;
         seats.push({ id: w.id, dx: rightEdge, dy });
         rightEdge += sr;
-      } else {                                        // 2nd, 4th ... to his left
-        leftEdge += WED_GAP + sr;
+      } else {                                        // out to his left
+        leftEdge += reach;
         seats.push({ id: w.id, dx: -leftEdge, dy });
         leftEdge += sr;
       }
@@ -166,17 +172,16 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const spots = rowSpots(id);
     const wives = wivesOf(id);
     const groups = [];
-    if (wives.length < 2) {
-      groups.push({ x: spots.get(id), kids });
-    } else {
-      for (const owner of [id, ...wives.map((w) => w.id)]) {
-        const mine = kids.filter((k) => (tree.people[k].motherId ?? id) === owner);
-        if (mine.length) groups.push({ x: spots.get(owner), kids: mine });
-      }
-      // a wife seated on his left gets her children on the left, so the runs are
-      // laid down in the order the mothers sit and no limb doubles back
-      groups.sort((p, q) => p.x - q.x);
+    for (const owner of [id, ...wives.map((w) => w.id)]) {
+      const mine = kids.filter((k) => {
+        const m = tree.people[k].motherId;
+        return (m && spots.has(m) ? m : id) === owner;
+      });
+      if (mine.length) groups.push({ x: spots.get(owner), kids: mine });
     }
+    // a wife seated on his left gets her children on the left, so the runs are
+    // laid down in the order the mothers sit and no limb doubles back
+    groups.sort((p, q) => p.x - q.x);
 
     let left = null, right = null;
     const offs = new Map();
@@ -205,7 +210,11 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     // under the middle of them, and his limbs have to travel halfway across
     // the drawing. Slide the whole fan back so it sits centred on him: that
     // one line is the difference between a tree and a pile of cables.
-    const mid = (left[0] + right[0]) / 2;
+    // The children belong over their mothers, so that is where the fan is set
+    // down: the point it aims for is the average of the seats that own it.
+    let sum = 0, count = 0;
+    for (const g of groups) { sum += g.x * g.kids.length; count += g.kids.length; }
+    const mid = (left[0] + right[0]) / 2 - sum / count;
     for (let d = 0; d < left.length; d++) { left[d] -= mid; right[d] -= mid; }
 
     const packed = {
