@@ -254,17 +254,28 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   };
 
   /**
-   * A row of brothers fans out from one point. Three or more split in two
-   * by weight and each half gets its own short fork, so ten sons come off a
-   * chain of forks in twos -- the way wood really splits -- and never off
-   * one point as ten spokes.
+   * A row of brothers fans out from one point. Every one of them is his own
+   * circle set straight off that point -- a name is never read off a bare
+   * bend in the wood, or a brother looks like his own brother's son. Only
+   * once a row is too crowded to read at a glance, past four names, does it
+   * split in two by weight and each half get its own short fork, so ten sons
+   * come off a chain of forks in twos -- the way wood really splits -- and
+   * never off one point as ten spokes.
    */
+  const DIRECT_MAX = 4;                          // this many brothers read fine off one point
   const fanOut = (from, units, lo, hi, gen) => {
     if (!units.length) return;
-    if (units.length === 1) {
-      const id = units[0].id;
-      const n = placeBlood(id, (lo + hi) / 2, gen, from);
-      placeFamily(n, kin.get(id) || [], lo, hi, gen);
+    if (units.length <= DIRECT_MAX) {
+      const shares = units.map((u) => wgt(u.id));
+      const tot = shares.reduce((s, v) => s + v, 0) || 1;
+      let acc = lo;
+      for (const u of units) {
+        const seg = (hi - lo) * (wgt(u.id) / tot);
+        const id = u.id;
+        const n = placeBlood(id, acc + seg / 2, gen, from);
+        placeFamily(n, kin.get(id) || [], acc, acc + seg, gen);
+        acc += seg;
+      }
       return;
     }
     const shares = units.map((u) => wgt(u.id));
@@ -279,12 +290,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const mid = lo + (hi - lo) * (leftShare / tot);
     [[units.slice(0, cut), lo, mid], [units.slice(cut), mid, hi]].forEach(([grp, glo, ghi]) => {
       if (!grp.length) return;
-      if (grp.length === 1) {
-        const id = grp[0].id;
-        const n = placeBlood(id, (glo + ghi) / 2, gen, from);
-        placeFamily(n, kin.get(id) || [], glo, ghi, gen);
-        return;
-      }
+      if (grp.length <= DIRECT_MAX) { fanOut(from, grp, glo, ghi, gen); return; }
       const wood = woodOf(grp.reduce((s, u) => s + weigh(u.id), 0));
       const fromR = Math.hypot(from.x, (from.y - ROOT_Y) / TALL);
       const jr = fromR + (radiusAt[gen] - fromR) * 0.42;
