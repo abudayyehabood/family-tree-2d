@@ -12,7 +12,8 @@ const PAD = 56;
 // so the outer limbs come down the sides the way a real canopy does.
 const CROWN = (342 * Math.PI) / 180;
 const SKY = 1.4;                 // how much taller the crown is drawn than reckoned
-const SEG = 84;                 // the least a branch ever reaches out, per fork
+const SEG = 78;                 // the least a branch ever reaches out, per fork
+const WED = 46;                  // and the little a wife stands off her husband
 const GAP = 9;                   // clear paper a name keeps around itself
 
 const TWIG_W = 13;               // the wood one single name is worth
@@ -157,33 +158,78 @@ export function layoutTree(tree, childrenOf, spouseOf) {
 
   const A = new Map();                          // the sky he is asking for
   const SPAN = new Map();                       // the sky he was given
-  const RING = rank.map((_, L) => L * SEG);     // how far out each generation is
+  const RAD = new Map();                        // how far out he himself stands
+  const CH = new Map();                         // the nearest he could ever stand
+  for (const id of order) { RAD.set(id, deep.get(id) * SEG); CH.set(id, deep.get(id) * SEG); }
   const roomOf = (id) => face.get(id).disc + GAP;
   const fitAt = (a) => Math.sin(Math.min(Math.PI / 2, Math.max(a, 1e-6) / 2));
+  // How far a branch has to carry someone past the man it leaves.
+  //
+  // A wife stands a short step off her husband and his sons stand a whole
+  // branch past her, so the wood always reads father -> wife -> son. Where a
+  // man has wives at all, even a child of no wife of his is carried out to
+  // that same distance: otherwise he came to rest shoulder to shoulder with
+  // his father's wives, which is not an order anyone can read.
+  //
+  // Whatever else it is, it is never so short that the two names touch.
+  const wed = (id) => Math.max(WED, roomOf(id) + wifeR(id) + GAP);
+  const married = (id) => !face.get(id).isWife && wivesOf(id).length > 0;
+  const stepOf = (id, u) => {
+    const base = u.wife ? wed(id) : (married(id) ? wed(id) + SEG : SEG);
+    return Math.max(base, roomOf(id) + roomOf(u.id));
+  };
 
   for (let pass = 0; pass < 40; pass++) {
     for (let i = order.length - 1; i >= 0; i--) {          // the asking
       const id = order[i];
       let sum = 0;
       for (const u of kin.get(id)) sum += A.get(u.id) || 0;
-      const rr = Math.max(1, RING[deep.get(id)]);
+      // What he asks for himself is the room his name needs at the nearest
+      // spot he could ever stand -- one branch past his father -- and not at
+      // wherever he happens to be standing now. Measured where he stands, a
+      // man squeezed into a thin slice asks for a thin slice, which is the
+      // slice that squeezed him: the thing settles happily into a lie, and a
+      // sonless brother of a big family ends up thrown out to the rim for no
+      // reason but that his brother had thirty names behind him. Asked at the
+      // near spot, he holds his ground and the room comes out of the brother
+      // who actually needs the sky.
+      // A wife asks for her room at the near spot beside her husband, not at
+      // wherever she has drifted to. Asked where she stands, a wife squeezed
+      // into a thin slice asks for a thin slice -- the very slice that
+      // squeezed her -- and she settles out past her own sons, which is the
+      // one order the tree must never draw.
+      const rr = Math.max(1, face.get(id).isWife ? CH.get(id) : RAD.get(id));
       const own = id === rootId
         ? 0 : 2 * Math.asin(Math.min(0.92, roomOf(id) / rr));
       A.set(id, Math.max(own, sum));
     }
     SPAN.set(rootId, CROWN);
+    RAD.set(rootId, 0);
     for (const id of order) {                              // the giving
       const us = kin.get(id);
       let tot = 0;
       for (const u of us) tot += A.get(u.id);
       tot = tot || 1;
-      for (const u of us) SPAN.set(u.id, (SPAN.get(id) * A.get(u.id)) / tot);
-    }
-    for (let L = 1; L < rank.length; L++) {                // the standing out
-      let want = RING[L - 1] + SEG;
-      for (const id of rank[L])
-        want = Math.max(want, roomOf(id) / fitAt(SPAN.get(id)));
-      RING[L] = want;
+      // and the standing out: as close in as his own slice of sky allows, and
+      // never nearer than one branch's reach past his father. A cousin
+      // squeezed for room used to drag his whole generation out with him -- a
+      // man with two sons was handed the same enormous bare branch that the
+      // largest family in the house had earned, and every ring past the third
+      // came out miles from the one before it.
+      let ring = 0;
+      for (const u of us) {
+        SPAN.set(u.id, (SPAN.get(id) * A.get(u.id)) / tot);
+        const chain = RAD.get(id) + stepOf(id, u);
+        CH.set(u.id, chain);
+        const want = Math.max(chain, roomOf(u.id) / fitAt(SPAN.get(u.id)));
+        RAD.set(u.id, want);
+        if (!u.wife) ring = Math.max(ring, want);
+      }
+      // Brothers do stand level with each other, though, and that is not
+      // tidiness: the wood out to a far brother would otherwise cut straight
+      // across a near one on the way. It is their own row that levels them
+      // now, not the whole generation's.
+      for (const u of us) if (!u.wife) RAD.set(u.id, ring);
     }
   }
 
@@ -212,13 +258,11 @@ export function layoutTree(tree, childrenOf, spouseOf) {
 
     const mass = units.map((u) => (u.wife ? wifeLoad(id, u.id) : weigh(u.id)));
     const share = units.map((u) => Math.max(A.get(u.id) || 0, 1e-6));
-
-    // His whole row stands on the next generation's ring, all of them,
-    // exactly. That is not tidiness: it is the no-crossing promise. Everything
-    // that is not his own wood stands at this distance or beyond it, so the
-    // branches running out to his children are the only wood anywhere inside
-    // the ring, and they have nothing to cross.
-    const ring = RING[deep.get(id) + 1];
+    // Each of them stands at his own distance, not on one ring shared by the
+    // whole generation. Nothing is lost by it: no two slices of sky overlap,
+    // and a name never leans out of the slice it was given, so the wood still
+    // has nowhere to cross into whatever the distances happen to be.
+    const rads = units.map((u) => RAD.get(u.id));
 
     // ---- and now the wood is let out to them, forking two at a time ----
     // Fanning ten sons straight off one point gives a hub with ten long
@@ -246,6 +290,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       return [g.slice(0, cut), g.slice(cut)];
     };
 
+    const nearOf = (g) => g.reduce((m, i) => Math.min(m, rads[i]), Infinity);
     const fan = (stem, sDir, sR, sSpan, g, left) => {
       const tot = shareOf(g) || 1;
       let edge = sDir + sSpan / 2;
@@ -257,21 +302,37 @@ export function layoutTree(tree, childrenOf, spouseOf) {
           const u = units[i];
           if (u.wife) marriages.push({ a: stem, b: u.id });
           else edges.push({ from: stem, to: u.id });
-          place(u.id, at, ring, sliceOf,
+          place(u.id, at, rads[i], sliceOf,
             depth + (u.wife ? 0 : 1), Boolean(u.wife), id);
         }
         return;
       }
-      const stepR = sR + (ring - sR) / left;
       for (const grp of halve(g)) {
         const slice = (sSpan * shareOf(grp)) / tot;
         const at = edge - slice / 2;
         edge -= slice;
+        // the fork sits a share of the way out to the nearest name behind it,
+        // so no wood of this round ever reaches past a name of the next
+        // Each round of forks sits a good way out toward the names it is
+        // carrying, not halfway. A fork set down early leaves the last stretch
+        // of wood a long sideways run across the row, and that run is what
+        // used to shave the edge of a brother's name on its way past.
+        const stepR = sR + (nearOf(grp) - sR) / left;
         const fork = `#j${jn++}`;
+        const fx = Math.cos(at) * stepR, fy = ROOT_Y - Math.sin(at) * stepR;
+        // A bare fork does not grow straight out of the trunk: it grows the way
+        // the wood arrived at it, leaning over toward the way it is going next.
+        // Given the trunk's heading instead, every joint of a long bough put a
+        // kink in the wood, and what should read as one limb climbing came out
+        // as a bough visibly cut into pieces.
+        const came = Math.atan2(nodes.get(stem).y - fy, fx - nodes.get(stem).x);
+        let turn = at - came;
+        while (turn > Math.PI) turn -= 2 * Math.PI;
+        while (turn < -Math.PI) turn += 2 * Math.PI;
         nodes.set(fork, {
           id: fork, person: null, isJoint: true, depth,
-          x: Math.cos(at) * stepR, y: ROOT_Y - Math.sin(at) * stepR,
-          angle: at, r: 0, w: woodOf(massOf(grp)),
+          x: fx, y: fy,
+          angle: came + turn * 0.5, r: 0, w: woodOf(massOf(grp)),
         });
         edges.push({ from: stem, to: fork });
         fan(fork, at, stepR, slice, grp, left - 1);
