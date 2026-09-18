@@ -70,8 +70,15 @@ export const ribbon = (a, c, b, w0, w1, steps, seed, rough) =>
  * and handed over.
  */
 export function limbCurve(from, to, off) {
-  const fa = from.angle ?? Math.PI / 2;
-  const ta = to.angle ?? Math.PI / 2;
+  // A name that was walked back in beside his father is fetched by a plain
+  // short branch: both ends face straight down the line between them. Left to
+  // their own headings, the father still growing up the tree and the name now
+  // sitting off to one side of him, the wood between them was drawn as a great
+  // lazy S that wandered half across the crown to cover a hand's breadth.
+  const plain = to.plain
+    ? Math.atan2(from.y - to.y, to.x - from.x) : 0;
+  const fa = to.plain ? plain : (from.angle ?? Math.PI / 2);
+  const ta = to.plain ? plain : (to.angle ?? Math.PI / 2);
   const a = { x: from.x, y: from.y };
   // the limb stops at the rim of the child's circle, measured back along the
   // way the child itself grows, not straight down the page
