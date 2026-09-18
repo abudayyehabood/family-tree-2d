@@ -30,7 +30,7 @@ const LIMP = 190;    // past this length a branch stops leaning any further
 export function limbHandles(ax, ay, bx, by, fa, ta, seed) {
   const ex = bx - ax, ey = by - ay;
   const len = Math.hypot(ex, ey) || 1;
-  const reach = Math.max(34, len * REACH);
+  const reach = len * REACH;   // never more than the branch itself has to give
   // across the branch, so the lean is a lean and not a stretch
   const nx = -ey / len, ny = ex / len;
   // The lean is measured off a capped length, not off the branch's own. A

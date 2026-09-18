@@ -1,4 +1,4 @@
-import { limbHandles, sway } from './limbShape.js';
+import { sway } from './limbShape.js';
 
 /* ---- poster geometry: every person is a cream circle, like the reference ---- */
 export const NODE_R = 27;        // a person's circle
@@ -10,37 +10,20 @@ export const TRUNK_H = 250;
 export const ROOT_Y = -14;
 const PAD = 56;
 
-// How far round the trunk the whole crown opens. A little past a half circle,
-// so the outer limbs come down the sides the way a real canopy does.
-const CROWN = (Number(process.env.XCROWN||342) * Math.PI) / 180;
-const SKY = 1.4;                 // how much taller the crown is drawn than reckoned
-const SEG = 78;                 // the least a branch ever reaches out, per fork
-const WED = 46;                  // and the little a wife stands off her husband
 const GAP = 9;                   // clear paper a name keeps around itself
 
 const TWIG_W = 13;               // the wood one single name is worth
 const LIMB_MIN_W = TWIG_W;       // even the last twig is wood, not a wire
 
 /**
- * The crown is cut into wedges, not settled by shoving.
+ * The crown is a round head of paper, filled.
  *
- * Every person owns a slice of the sky, and he hands that slice out to his
- * children in the proportion of the families they carry: a son with thirty
- * names behind him gets thirty times the sky of his brother with one. Each of
- * them then stands in the middle of his own slice and does the same again.
- *
- * Two things fall out of that, and they are the whole reason for it:
- *
- *  - The crown balances itself. Weight and sky are the same number, so the
- *    heavy side of the family is also the wide side, and the tree cannot end
- *    up hanging off one shoulder.
- *  - No branch can ever cross another. A family never leaves the slice it was
- *    given, and no two slices overlap, so the wood has nowhere to cross into.
- *
- * How far out a row of children stands is not guessed either: it is the
- * distance at which the slices they were just handed are finally wide enough
- * to stand all their names side by side. A big family pushes its own ring
- * further from the trunk, which is exactly what a big family does.
+ * Every man is handed a patch of it with room for the family behind him. He
+ * stands in the corner of his patch nearest his father, and what is left is
+ * cut between his wives and his sons the same way. Patches are cut by area
+ * and always across their longest way, so what a big family gets is a fat
+ * patch and not a thin wedge -- nobody is pushed out to the rim, and every
+ * branch is short because both its ends are in the same patch.
  */
 export function layoutTree(tree, childrenOf, spouseOf) {
   const nodes = new Map();
@@ -159,528 +142,398 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   };
   collect(rootId, false, null, 0);
 
-  const A = new Map();                          // the sky he is asking for
-  const SPAN = new Map();                       // the sky he was given
-  const RAD = new Map();                        // how far out he himself stands
-  const CH = new Map();                         // the nearest he could ever stand
-  for (const id of order) { RAD.set(id, deep.get(id) * SEG); CH.set(id, deep.get(id) * SEG); }
-  const roomOf = (id) => face.get(id).disc + GAP;
-  const fitAt = (a) => Math.sin(Math.min(Math.PI / 2, Math.max(a, 1e-6) / 2));
-  // How far a branch has to carry someone past the man it leaves.
-  //
-  // A wife stands a short step off her husband and his sons stand a whole
-  // branch past her, so the wood always reads father -> wife -> son. Where a
-  // man has wives at all, even a child of no wife of his is carried out to
-  // that same distance: otherwise he came to rest shoulder to shoulder with
-  // his father's wives, which is not an order anyone can read.
-  //
-  // Whatever else it is, it is never so short that the two names touch.
-  const wed = (id) => Math.max(WED, roomOf(id) + wifeR(id) + GAP);
-  const married = (id) => !face.get(id).isWife && wivesOf(id).length > 0;
-  const stepOf = (id, u) => {
-    const base = u.wife ? wed(id) : (married(id) ? wed(id) + SEG : SEG);
-    return Math.max(base, roomOf(id) + roomOf(u.id));
-  };
+  /* ------------------------------------------------------------------ *
+   * The crown is an area to be filled, not a fan of wedges.
+   *
+   * On the painted poster the names are not strung round a rim: they are
+   * scattered evenly through the whole round head of the tree, near the bole
+   * and far from it alike, each one on a short twig of its own. No branch on
+   * that poster is long. That is the only thing being copied here.
+   *
+   * So the crown is one round patch of paper, and it is cut up by AREA rather
+   * than by angle. A man is given a patch big enough for the family behind
+   * him; he stands in the corner of it nearest his father; and what is left of
+   * his patch is cut between his wives and his sons the same way. Because the
+   * patch handed to a big family is a fat patch and not a thin wedge, nobody
+   * is ever flung out to the rim, and no branch has to run sideways across
+   * empty paper to fetch him: the far end of every branch is inside the patch
+   * the near end is standing in.
+   *
+   * Nothing can cross, either. Every patch is convex and no two overlap, all a
+   * man's wood stays inside his own patch, and the only two branches that ever
+   * share paper are the two leaving one fork -- which meet at that fork and
+   * nowhere else.
+   * ------------------------------------------------------------------ */
 
-  const BARE = Number(process.env.XBETA || 0);   // how far out a sonless man is carried
-  const bare = (id) => (kin.get(id) || []).length === 0;
-  let far = 0;                                  // the outermost sonless man
-
-  for (let pass = 0; pass < 40; pass++) {
-    far = 0;
-    for (const id of order) if (bare(id)) far = Math.max(far, RAD.get(id));
-    const pull = far * BARE;
-    for (let i = order.length - 1; i >= 0; i--) {          // the asking
-      const id = order[i];
-      let sum = 0;
-      for (const u of kin.get(id)) sum += A.get(u.id) || 0;
-      // What he asks for himself is the room his name needs at the nearest
-      // spot he could ever stand -- one branch past his father -- and not at
-      // wherever he happens to be standing now. Measured where he stands, a
-      // man squeezed into a thin slice asks for a thin slice, which is the
-      // slice that squeezed him: the thing settles happily into a lie, and a
-      // sonless brother of a big family ends up thrown out to the rim for no
-      // reason but that his brother had thirty names behind him. Asked at the
-      // near spot, he holds his ground and the room comes out of the brother
-      // who actually needs the sky.
-      // A wife asks for her room at the near spot beside her husband, not at
-      // wherever she has drifted to. Asked where she stands, a wife squeezed
-      // into a thin slice asks for a thin slice -- the very slice that
-      // squeezed her -- and she settles out past her own sons, which is the
-      // one order the tree must never draw.
-      const rr = Math.max(1, face.get(id).isWife ? CH.get(id)
-        : (bare(id) ? Math.max(RAD.get(id), pull) : RAD.get(id)));
-      const own = id === rootId
-        ? 0 : 2 * Math.asin(Math.min(0.92, roomOf(id) / rr));
-      A.set(id, Math.max(own, sum));
-    }
-    SPAN.set(rootId, CROWN);
-    RAD.set(rootId, 0);
-    for (const id of order) {                              // the giving
-      const us = kin.get(id);
-      let tot = 0;
-      for (const u of us) tot += A.get(u.id);
-      tot = tot || 1;
-      // and the standing out: as close in as his own slice of sky allows, and
-      // never nearer than one branch's reach past his father. A cousin
-      // squeezed for room used to drag his whole generation out with him -- a
-      // man with two sons was handed the same enormous bare branch that the
-      // largest family in the house had earned, and every ring past the third
-      // came out miles from the one before it.
-      // Every man stands as close in as his own slice of sky allows, and no
-      // brother of his is dragged out with him. Levelling a whole row on its
-      // worst-off brother is what emptied the middle of the crown: four sons
-      // who fitted at four hundred were carried out to six hundred because a
-      // fifth needed it there, and the wood spent that whole band running flat
-      // sideways across nothing at all.
-      let ring = 0;
-      for (const u of us) {
-        SPAN.set(u.id, (SPAN.get(id) * A.get(u.id)) / tot);
-        const chain = RAD.get(id) + stepOf(id, u);
-        CH.set(u.id, chain);
-        const want = Math.max(chain, roomOf(u.id) / fitAt(SPAN.get(u.id)),
-          bare(u.id) && !u.wife ? pull : 0);
-        RAD.set(u.id, want);
-        if (!u.wife) ring = Math.max(ring, want);
-      }
-      // Brothers stand level with each other: the wood out to a far brother
-      // would otherwise cut straight across a near one on the way. It is their
-      // own row that levels them, not the whole generation's.
-      for (const u of us) if (!u.wife) RAD.set(u.id, ring);
-    }
+  const heads = order.length;                    // every name that must fit
+  const cell = Math.PI * (NODE_R + GAP) * (NODE_R + GAP);
+  const SLACK = 3.2;                             // wood and leaves want the rest
+  const TALL = 1.06;                             // a touch taller than it is wide
+  const RX = Math.sqrt((heads * cell * SLACK) / (Math.PI * TALL));
+  const RY = RX * TALL;
+  const CY = ROOT_Y - RY;                        // the head sits on the bole
+  const crown = [];
+  for (let i = 0; i < 72; i++) {
+    const a = (i / 72) * Math.PI * 2;
+    crown.push({ x: Math.cos(a) * RX, y: CY + Math.sin(a) * RY });
   }
 
-  /**
-   * @param dir   the way out of the trunk this person sits along
-   * @param r     how far from the top of the trunk he stands
-   * @param span  the slice of sky that is his to give away
-   */
-  const place = (id, dir, r, span, depth, isWife, man) => {
-    const x = Math.cos(dir) * r;
-    const y = ROOT_Y - Math.sin(dir) * r;
-    nodes.set(id, {
-      id, person: tree.people[id], depth, x, y,
-      // He grows the way out of the trunk he stands, not along the line from
-      // his father: the two differ, and that difference is what bends the wood.
-      angle: dir,
-      r: isWife ? wifeR(man) : discR(id),
-      w: woodOf(isWife ? wifeLoad(man, id) : weigh(id)),
-      isFounder: id === rootId || (isWife && man === rootId),
-      isLeaf: !isWife && kidsOf(id).length === 0,
-      ...(isWife ? { isSpouse: true, partnerId: man } : {}),
-    });
+  /* ---- cutting up a patch of paper ---- */
 
-    const units = kin.get(id) || [];
-    if (!units.length) return;
-
-    const mass = units.map((u) => (u.wife ? wifeLoad(id, u.id) : weigh(u.id)));
-    const share = units.map((u) => Math.max(A.get(u.id) || 0, 1e-6));
-    // Each of them stands at his own distance, not on one ring shared by the
-    // whole generation. Nothing is lost by it: no two slices of sky overlap,
-    // and a name never leans out of the slice it was given, so the wood still
-    // has nowhere to cross into whatever the distances happen to be.
-    const rads = units.map((u) => RAD.get(u.id));
-
-    // ---- and now the wood is let out to them, forking two at a time ----
-    // Fanning ten sons straight off one point gives a hub with ten long
-    // spokes, which is an umbrella and not a tree. Wood forks in twos: the
-    // brothers are split into two halves of about equal weight, a bare fork is
-    // set down part of the way out for each half, and each half is split
-    // again, until what is left is one name. The distance to the ring gets
-    // used up in short steps instead of one long reach, which is what a limb
-    // actually looks like.
-    //
-    // Every fork of one round sits at the same distance out, for the same
-    // reason the brothers do: nothing may stand inside the circle the wood of
-    // that round is crossing.
-    const massOf = (g) => g.reduce((s, i) => s + mass[i], 0);
-    const shareOf = (g) => g.reduce((s, i) => s + share[i], 0);
-    const halve = (g) => {
-      if (g.length < 2) return [g];
-      const tot = massOf(g);
-      let run = 0, cut = 1, best = Infinity;
-      for (let i = 1; i < g.length; i++) {
-        run += mass[g[i - 1]];
-        const off = Math.abs(run - tot / 2);
-        if (off < best) { best = off; cut = i; }
-      }
-      return [g.slice(0, cut), g.slice(cut)];
-    };
-
-    const nearOf = (g) => g.reduce((m, i) => Math.min(m, rads[i]), Infinity);
-    // The wood keeps forking until nothing is left but a pair. It used to stop
-    // after a counted number of rounds, and because a fork is cut where the
-    // weight balances and not down the middle, five brothers could still be
-    // hanging off one point when the rounds ran out -- a hub with five long
-    // spokes, and the far spoke sweeping straight across a near brother's
-    // name. A pair is the only thing the wood is ever allowed to end on.
-    const fan = (stem, sDir, sR, sSpan, g) => {
-      const tot = shareOf(g) || 1;
-      const left = Math.max(1, Math.ceil(Math.log2(Math.max(2, g.length))));
-      let edge = sDir + sSpan / 2;
-      if (g.length <= 2) {                   // the last fork: the names themselves
-        for (const i of g) {
-          const sliceOf = (sSpan * share[i]) / tot;
-          const at = edge - sliceOf / 2;
-          edge -= sliceOf;
-          const u = units[i];
-          // A man with no sons is not held to the middle of the sky he was
-          // given: he has no family to stand over, so he is drawn back in
-          // toward the way his father grows, and stops only where his own name
-          // would begin to lean out of his slice. Held at the middle, a sonless
-          // son of a wide father was flung out to the far edge of a great empty
-          // wedge, and his father had to throw a branch half the crown wide
-          // across nothing at all to reach him.
-          const hug = (kin.get(u.id) || []).length === 0;
-          let lay = at;
-          if (hug) {
-            const m = Math.asin(Math.min(0.95, roomOf(u.id) / rads[i]));
-            const lo = at - sliceOf / 2 + m, hi = at + sliceOf / 2 - m;
-            if (lo < hi) lay = Math.min(hi, Math.max(lo, sDir));
-          }
-          if (u.wife) marriages.push({ a: stem, b: u.id });
-          else edges.push({ from: stem, to: u.id });
-          place(u.id, lay, rads[i], sliceOf,
-            depth + (u.wife ? 0 : 1), Boolean(u.wife), id);
-        }
-        return;
-      }
-      for (const grp of halve(g)) {
-        const slice = (sSpan * shareOf(grp)) / tot;
-        const at = edge - slice / 2;
-        edge -= slice;
-        // the fork sits a share of the way out to the nearest name behind it,
-        // so no wood of this round ever reaches past a name of the next
-        // Each round of forks sits a good way out toward the names it is
-        // carrying, not halfway. A fork set down early leaves the last stretch
-        // of wood a long sideways run across the row, and that run is what
-        // used to shave the edge of a brother's name on its way past.
-        const stepR = sR + (nearOf(grp) - sR) / left;
-        const fork = `#j${jn++}`;
-        const fx = Math.cos(at) * stepR, fy = ROOT_Y - Math.sin(at) * stepR;
-        // A bare fork does not grow straight out of the trunk: it grows the way
-        // the wood arrived at it, leaning over toward the way it is going next.
-        // Given the trunk's heading instead, every joint of a long bough put a
-        // kink in the wood, and what should read as one limb climbing came out
-        // as a bough visibly cut into pieces.
-        const came = Math.atan2(nodes.get(stem).y - fy, fx - nodes.get(stem).x);
-        let turn = at - came;
-        while (turn > Math.PI) turn -= 2 * Math.PI;
-        while (turn < -Math.PI) turn += 2 * Math.PI;
-        nodes.set(fork, {
-          id: fork, person: null, isJoint: true, depth,
-          x: fx, y: fy,
-          angle: came + turn * 0.5, r: 0, w: woodOf(massOf(grp)),
-        });
-        edges.push({ from: stem, to: fork });
-        fan(fork, at, stepR, slice, grp);
-      }
-    };
-    fan(id, dir, r, span, units.map((_, i) => i));
-  };
-  place(rootId, Math.PI / 2, 0, CROWN, 0, false, null);
-
-  // A crown built out of one point is a half circle, and a half circle is
-  // twice as wide as it is tall: the tree came out as a flat fan lying across
-  // the paper, nothing like the round head of a real tree. So the whole crown
-  // is drawn up taller than it was reckoned. Only the standing-apart in the
-  // upright direction changes, and it only ever grows, so nothing that was
-  // clear of anything else can be brought into it. Each name's own heading is
-  // pulled up with it, or the wood would arrive at a name pointing the way it
-  // used to stand rather than the way it now does.
-  for (const n of nodes.values()) {
-    const up = ROOT_Y - n.y;
-    n.y = ROOT_Y - up * SKY;
-    n.angle = Math.atan2(Math.sin(n.angle) * SKY, Math.cos(n.angle));
-  }
-
-  /**
-   * Bringing the sonless in off the rim.
-   *
-   * A slice of sky is a wedge cut from the trunk, and a man with a great
-   * family takes a wide one. Everything of his, though, stands out beyond his
-   * own ring: the part of his wedge nearer the trunk than that is bare paper,
-   * and there is a lot of it. Meanwhile his brother, who has no sons, was
-   * given a thin slice of what was left and had to go and stand in it -- out
-   * at the far edge of the crown, a hundred degrees round from his father,
-   * with a branch half the width of the tree thrown across the emptiness to
-   * reach him. That one branch was the longest in the picture, and every inch
-   * of it crossed nothing at all.
-   *
-   * So a man with no sons is not held to his slice. He is walked in toward
-   * his father, as near and as straight as he will go, and set down at the
-   * first spot where his name is clear of every other name, clear of every
-   * piece of wood, and the branch that fetches him crosses nothing. If no such
-   * spot exists he stays exactly where the wedges put him, so the promise the
-   * wedges make is never broken -- only improved on where there is room.
-   */
-  const stamp = new Map();                     // bumped whenever a name moves
-  const roads = new Map();                     // and the curve we worked out for it
-  const roadFor = (a, b) => {
-    const key = `${a.id}>${b.id}`;
-    const now = (stamp.get(a.id) || 0) * 1e6 + (stamp.get(b.id) || 0);
-    const had = roads.get(key);
-    if (had && had.when === now) return had.road;
-    const road = roadOf(a, b);
-    roads.set(key, { when: now, road });
-    return road;
-  };
-  const moved = (n) => stamp.set(n.id, (stamp.get(n.id) || 0) + 1);
-  const snip = () => {
-    for (;;) {
-      const holds = new Set();
-      for (const e of edges) holds.add(e.from);
-      for (const m of marriages) holds.add(m.a);
-      const dead = [...nodes.values()].filter((n) => n.isJoint && !holds.has(n.id));
-      if (!dead.length) return;
-      for (const d of dead) {
-        nodes.delete(d.id);
-        for (let i = edges.length - 1; i >= 0; i--) if (edges[i].to === d.id) edges.splice(i, 1);
-      }
+  const areaOf = (P) => {
+    let s = 0;
+    for (let i = 0; i < P.length; i++) {
+      const a = P[i], b = P[(i + 1) % P.length];
+      s += a.x * b.y - b.x * a.y;
     }
+    return Math.abs(s) / 2;
   };
-  const bodies = [...nodes.values()].filter((n) => n.person);
-  const woodOn = () => {
+
+  /** What is left of a patch on one side of a straight line. */
+  const clip = (P, nx, ny, d) => {
     const out = [];
-    for (const e of edges.concat(marriages.map((m) => ({ from: m.a, to: m.b })))) {
-      const a = nodes.get(e.from), b = nodes.get(e.to);
-      if (a && b) out.push({ a, b, from: e.from, to: e.to, w: Math.max(a.w || 0, b.w || 0) });
+    for (let i = 0; i < P.length; i++) {
+      const a = P[i], b = P[(i + 1) % P.length];
+      const da = nx * a.x + ny * a.y - d, db = nx * b.x + ny * b.y - d;
+      if (da <= 0) out.push(a);
+      if ((da < 0 && db > 0) || (da > 0 && db < 0)) {
+        const t = da / (da - db);
+        out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      }
     }
     return out;
   };
-  // The wood is not a ruler line -- it leaves its father growing his way and
-  // leans over on the road -- so anything that asks "does this branch touch
-  // that one" has to ask it of the curve the branch is really drawn as. Asked
-  // of the straight line between the ends, two branches read as clear of each
-  // other and then cross on the paper.
-  const roadOf = (from, to, dx = 0, dy = 0) => {
-    const straight = to.plain
-      ? Math.atan2((from.y + dy) - (to.y + dy), (to.x + dx) - (from.x + dx)) : 0;
-    const fa = to.plain ? straight : (from.angle ?? Math.PI / 2);
-    const ta = to.plain ? straight : (to.angle ?? Math.PI / 2);
-    const off = to.isJoint ? 0 : (to.r || NODE_R) * 0.45;
-    const ax = from.x + dx, ay = from.y + dy;
-    const bx = to.x + dx - Math.cos(ta) * off, by = to.y + dy + Math.sin(ta) * off;
-    const bare = from.isJoint || to.isJoint;
-    const h = limbHandles(ax, ay, bx, by, fa, ta,
-      bare ? 0.5 : sway(`${from.id}>${to.id}`));
-    const out = [];
+
+  /**
+   * A patch is always cut across its longest way. Cut the other way and the
+   * pieces come out as slivers, and a sliver is the wedge all over again.
+   */
+  const longWay = (P) => {
+    let bx = 1, by = 0, best = -1;
+    for (let i = 0; i < P.length; i++) {
+      for (let j = i + 1; j < P.length; j++) {
+        const dx = P[j].x - P[i].x, dy = P[j].y - P[i].y;
+        const d = dx * dx + dy * dy;
+        if (d > best) { best = d; bx = dx; by = dy; }
+      }
+    }
+    const L = Math.hypot(bx, by) || 1;
+    return { x: bx / L, y: by / L };
+  };
+
+  /** How much clear paper there is around a spot, or how far outside it is. */
+  const roomAt = (P, x, y) => {
+    let inn = false, near = Infinity;
+    for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+      const a = P[i], b = P[j];
+      if ((a.y > y) !== (b.y > y)
+        && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inn = !inn;
+      const ex = b.x - a.x, ey = b.y - a.y;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * ex + (y - a.y) * ey) / (ex * ex + ey * ey || 1)));
+      near = Math.min(near, Math.hypot(x - (a.x + ex * t), y - (a.y + ey * t)));
+    }
+    return inn ? near : -near;
+  };
+
+  /** How far a spot is from a patch: nothing, if it is standing in it. */
+  const awayFrom = (P, x, y) => Math.max(0, -roomAt(P, x, y));
+
+  /** How far from square a patch is. A sliver is a wedge under another name. */
+  const slim = (P) => {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (let i = 0; i <= 14; i++) {
-      const t = i / 14, u = 1 - t;
-      const x = u * u * u * ax + 3 * u * u * t * h.c1x + 3 * u * t * t * h.c2x + t * t * t * bx;
-      const y = u * u * u * ay + 3 * u * u * t * h.c1y + 3 * u * t * t * h.c2y + t * t * t * by;
-      out.push({ x, y });
-      if (x < x0) x0 = x; if (x > x1) x1 = x;
-      if (y < y0) y0 = y; if (y > y1) y1 = y;
+    for (const p of P) {
+      x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x);
+      y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
     }
-    out.box = { x0, y0, x1, y1 };
-    return out;
+    const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0);
+    return Math.max(w / h, h / w);
   };
-  // Two stretches of wood that are nowhere near each other on the paper need
-  // no measuring at all, and almost every pair is nowhere near.
-  const apart = (b, c, m) =>
-    b.x0 - c.x1 > m || c.x0 - b.x1 > m || b.y0 - c.y1 > m || c.y0 - b.y1 > m;
-  const gapTo = (p, q, c) => {                 // how near a stretch of wood comes
-    const dx = q.x - p.x, dy = q.y - p.y;
-    const L = dx * dx + dy * dy || 1;
-    let t = ((c.x - p.x) * dx + (c.y - p.y) * dy) / L;
-    t = Math.max(0, Math.min(1, t));
-    return Math.hypot(p.x + dx * t - c.x, p.y + dy * t - c.y);
-  };
-  const side = (o, a, b) => Math.sign((b.x - a.x) * (o.y - a.y) - (b.y - a.y) * (o.x - a.x));
-  const meets = (a, b, c, d) =>
-    side(a, c, d) * side(b, c, d) < 0 && side(c, a, b) * side(d, a, b) < 0;
-  // Not merely "do they cross" but "do they come near": a branch checked only
-  // for crossing can be slid until it lies a hair off another one, and the
-  // wood is drawn with width, so a hair is a tangle.
-  const roadsMeet = (r1, r2, keep = 9) => {
-    if (r1.box && r2.box && apart(r1.box, r2.box, keep)) return false;
-    for (let i = 1; i < r1.length; i++)
-      for (let j = 1; j < r2.length; j++) {
-        if (meets(r1[i - 1], r1[i], r2[j - 1], r2[j])) return true;
-        if (gapTo(r1[i - 1], r1[i], r2[j - 1]) < keep) return true;
-        if (gapTo(r2[j - 1], r2[j], r1[i - 1]) < keep) return true;
-      }
-    return false;
-  };
-  const roadGap = (road, c, keep = Infinity) => {
-    if (road.box && keep < Infinity
-      && apart(road.box, { x0: c.x, y0: c.y, x1: c.x, y1: c.y }, keep)) return Infinity;
-    let m = Infinity;
-    for (let i = 1; i < road.length; i++) m = Math.min(m, gapTo(road[i - 1], road[i], c));
-    return m;
-  };
-
-  const bringIn = (least = 0) => {
-  const adrift = [...nodes.values()].filter((n) => n.person)
-    .filter((n) => n.id !== rootId && !(kin.get(n.id) || []).length && stemOf.has(n.id))
-    .map((n) => ({ n, p: nodes.get(stemOf.get(n.id)) }))
-    .filter((k) => k.p)
-    .map((k) => ({ ...k, far: Math.hypot(k.n.x - k.p.x, k.n.y - k.p.y) }))
-    .filter((k) => k.far > least)
-    .sort((a, b) => b.far - a.far);
-
-  for (const { n, p, far } of adrift) {
-    snip();                                    // dead wood blocks nobody
-    const mine = (n.r || NODE_R);
-    const wood = woodOn().filter((s) => s.to !== n.id && s.from !== n.id)
-      .map((s) => ({ ...s, road: roadFor(s.a, s.b) }));
-    const others = bodies.filter((b) => b !== n);
-    const out0 = Math.hypot(p.x, p.y - ROOT_Y);
-    const clear = (x, y, th) => {
-      const c = { x, y };
-      // Never back past his own father. A son walked in so far that he ends up
-      // nearer the trunk than the man he came from -- or than his own mother --
-      // reads as the wrong generation, and that is worse than a long branch.
-      if (Math.hypot(x, y - ROOT_Y) < out0 - 4) return false;
-      for (const b of others)
-        if (Math.hypot(b.x - x, b.y - y) < mine + (b.r || NODE_R) + GAP) return false;
-      for (const s of wood)
-        if (roadGap(s.road, c, mine + s.w / 2 + 3) < mine + s.w / 2 + 3) return false;
-      const road = roadOf(p, { ...n, x, y, angle: th });
-      for (const s of wood) {
-        if (s.from === p.id || s.to === p.id) continue;
-        if (roadsMeet(road, s.road)) return false;
-      }
-      for (const b of others)
-        if (b.id !== p.id && roadGap(road, b, (b.r || NODE_R) + (n.w || TWIG_W) / 2 + 3)
-          < (b.r || NODE_R) + (n.w || TWIG_W) / 2 + 3) return false;
-      return true;
-    };
-    const near = mine + (p.r || NODE_R) + GAP + 6;
-    let done = false;
-    for (let R = near; R < far && !done; R += 17) {
-      for (let k = 0; k <= 28 && !done; k++) {
-        const off = ((k + 1) >> 1) * (k % 2 ? 1 : -1) * 0.12;
-        const th = (p.angle ?? Math.PI / 2) + off;
-        const x = p.x + Math.cos(th) * R, y = p.y - Math.sin(th) * R;
-        const face2 = Math.atan2(p.y - y, x - p.x);
-        if (!clear(x, y, face2)) continue;
-        n.x = x; n.y = y; moved(n);
-        n.angle = face2;
-        n.plain = true;                        // a twig fetched straight, no S
-        for (const e of edges) if (e.to === n.id) e.from = p.id;
-        for (const m of marriages) if (m.b === n.id) m.a = p.id;
-        done = true;
-      }
-    }
-  }
-  };
-  // Once before the families are slid in, and once after. The second time
-  // round there is more room -- dead wood has been cut away and whole families
-  // have come in -- so a name that could find nowhere near his father on the
-  // first walk often can on the second.
-  bringIn();
 
   /**
-   * And the same again for a small family, moved whole.
+   * Two pieces, the first holding the asked-for share of the paper.
    *
-   * A man with two sons behind him is in the same plight as a man with none:
-   * his slice of sky is thin, so it sits far round the rim, and his father
-   * throws a bough clear across the crown to reach him. He cannot be walked in
-   * on his own -- his sons would be left behind -- so he is slid in with the
-   * whole of his family held together, every branch of it keeping its shape,
-   * as far toward his father as it will go before anything of his touches
-   * anything of anybody else's. Where nothing gives, nothing moves.
+   * Which way the cut runs is chosen, not assumed, and two things are weighed
+   * against each other in choosing it. A cut has to leave both pieces near the
+   * fork that feeds them, or the wood grows one long bare branch across the
+   * crown to reach the far one -- and it has to leave both pieces fat, because
+   * a long thin piece is the old wedge come back, and a name standing in a
+   * wedge is a name out on the rim. Every direction is tried, the share of
+   * paper fixes where along that direction the cut falls, and the direction
+   * that comes off best on both counts wins.
    */
-  const brood = new Map();                     // id -> everything hanging off him
-  for (let i = order.length - 1; i >= 0; i--) {
-    const id = order[i];
-    const mine = [id];
-    for (const u of kin.get(id) || []) for (const q of brood.get(u.id) || []) mine.push(q);
-    brood.set(id, mine);
-  }
-  // The bare forks that serve this family and nobody else. A fork that also
-  // carries an uncle must stay where it is: dragging it would drag his wood
-  // along with it, and that is how a branch ends up laid across another.
-  const joints = (ids) => {
-    const set = new Set(ids), grew = [...ids];
-    const links = edges.concat(marriages.map((m) => ({ from: m.a, to: m.b })));
-    for (let pass = 0; pass < 8; pass++) {
-      let grewThis = false;
-      for (const l of links) {
-        if (!set.has(l.to) || set.has(l.from)) continue;
-        const j = nodes.get(l.from);
-        if (!j || !j.isJoint) continue;
-        if (links.some((k) => k.from === l.from && !set.has(k.to))) continue;
-        set.add(l.from); grew.push(l.from); grewThis = true;
+  const share = (P, frac, from) => {
+    const want = areaOf(P) * Math.min(0.94, Math.max(0.06, frac));
+    let bestScore = Infinity, cut = null;
+    for (let k = 0; k < 36; k++) {
+      const a = (k / 36) * Math.PI;
+      const nx = Math.cos(a), ny = Math.sin(a);
+      let lo = Infinity, hi = -Infinity;
+      for (const p of P) {
+        const t = nx * p.x + ny * p.y;
+        lo = Math.min(lo, t); hi = Math.max(hi, t);
       }
-      if (!grewThis) break;
+      let u = lo, v = hi;
+      for (let i = 0; i < 26; i++) {
+        const m = (u + v) / 2;
+        if (areaOf(clip(P, nx, ny, m)) < want) u = m; else v = m;
+      }
+      const d = (u + v) / 2;
+      const H1 = clip(P, nx, ny, d), H2 = clip(P, -nx, -ny, -d);
+      if (H1.length < 3 || H2.length < 3) continue;
+      const far = Math.max(awayFrom(H1, from.x, from.y), awayFrom(H2, from.x, from.y));
+      const thin = Math.max(slim(H1), slim(H2));
+      const score = far + 70 * Math.max(0, thin - 1.6);
+      if (score < bestScore) { bestScore = score; cut = [H1, H2]; }
     }
-    return grew.filter((q) => nodes.has(q));
+    return cut || [P, []];
   };
 
-  const packs = [...nodes.values()]
-    .filter((n) => n.person && n.id !== rootId && stemOf.has(n.id)
-      && (brood.get(n.id) || []).length > 1)
-    .map((n) => ({ n, p: nodes.get(stemOf.get(n.id)) }))
-    .filter((k) => k.p)
-    .map((k) => ({ ...k, far: Math.hypot(k.n.x - k.p.x, k.n.y - k.p.y) }))
-    .sort((a, b) => b.far - a.far);
+  /* ---- everything already set down, so nothing lands on it ---- */
+  const taken = [];
+  const free = (x, y, r) => {
+    for (const d of taken) if (Math.hypot(d.x - x, d.y - y) < r + d.r + GAP) return false;
+    return true;
+  };
 
-  for (const { n, p, far } of packs) {
-    bringIn(190);
-  snip();
-    if (!nodes.has(n.id)) continue;
-    const ids = new Set(joints(brood.get(n.id)));
-    if (ids.has(p.id)) continue;
-    const mob = [...ids].map((q) => nodes.get(q)).filter(Boolean);
-    const rest = [...nodes.values()].filter((q) => q.person && !ids.has(q.id));
-    const theirs = [], ours = [];
-    for (const e of edges.concat(marriages.map((m) => ({ from: m.a, to: m.b })))) {
-      const a = nodes.get(e.from), b = nodes.get(e.to);
-      if (!a || !b) continue;
-      const w = Math.max(a.w || 0, b.w || 0);
-      if (ids.has(e.from) && ids.has(e.to)) ours.push({ a, b, w });
-      else if (!ids.has(e.from) && !ids.has(e.to))
-        theirs.push({ a, b, w, from: e.from, to: e.to, road: roadFor(a, b) });
+  /**
+   * Where inside a patch something stands: the spot nearest the wood that is
+   * coming to fetch it, out of those with clear paper all round. Nearest, so
+   * the branch is short -- which is the whole of the poster's look.
+   */
+  const spotIn = (P, r, from, middle) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of P) {
+      x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x);
+      y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
     }
-    const ux = (p.x - n.x) / (far || 1), uy = (p.y - n.y) / (far || 1);
-    const fits = (dx, dy) => {
-      const at = (q) => ({ x: q.x + dx, y: q.y + dy });
-      for (const q of mob) {
-        if (!q.person) continue;
-        const c = at(q), rq = q.r || NODE_R;
-        for (const o of rest)
-          if (Math.hypot(o.x - c.x, o.y - c.y) < rq + (o.r || NODE_R) + GAP) return false;
-        for (const t of theirs)
-          if (roadGap(t.road, c, rq + t.w / 2 + 3) < rq + t.w / 2 + 3) return false;
+    let step = Math.max(5, r * 0.45);
+    while (((x1 - x0) / step) * ((y1 - y0) / step) > 6000) step *= 1.35;
+    const grid = [];
+    let deepest = 0;
+    for (let y = y0; y <= y1; y += step) {
+      for (let x = x0; x <= x1; x += step) {
+        const room = roomAt(P, x, y);
+        if (room <= 0) continue;
+        deepest = Math.max(deepest, room);
+        grid.push({ x, y, room });
       }
-      const lead = roadOf(p, n, dx, dy);
-      for (const o of rest)
-        if (o.id !== p.id && roadGap(lead, o, (o.r || NODE_R) + (n.w || TWIG_W) / 2 + 3)
-          < (o.r || NODE_R) + (n.w || TWIG_W) / 2 + 3) return false;
-      for (const t of theirs) {
-        if (t.from === p.id || t.to === p.id) continue;
-        if (roadsMeet(lead, t.road)) return false;
+    }
+    // A man whose patch has to hold his whole family stands at the way into
+    // it and leaves the rest of the paper to them. A man with nobody behind
+    // him owns every inch of his own little patch, so he stands in the middle
+    // of it -- and it is that, over all the leaves of the tree, that spreads
+    // the names evenly through the head instead of letting each one hug the
+    // way in and leave the far side of the crown bare.
+    for (const deep of (middle ? [0.8, 0.55, 0.3, 0] : [0])) {
+      const keep = Math.max(r + GAP, Math.min(deepest * deep, r * 2));
+      let best = null, cut = Infinity;
+      for (const g of grid) {
+        if (g.room < keep) continue;
+        if (!free(g.x, g.y, r)) continue;
+        const d = (g.x - from.x) * (g.x - from.x) + (g.y - from.y) * (g.y - from.y);
+        if (d < cut) { cut = d; best = g; }
       }
-      for (const s of ours) {
-        const road = roadOf(s.a, s.b, dx, dy);
-        for (const o of rest)
-          if (roadGap(road, o, (o.r || NODE_R) + s.w / 2 + 3) < (o.r || NODE_R) + s.w / 2 + 3) return false;
-        for (const t of theirs) if (roadsMeet(road, t.road)) return false;
+      if (best) return { x: best.x, y: best.y };
+    }
+    for (const keep of [r * 0.7, r * 0.4]) {
+      let best = null, cut = Infinity;
+      for (const g of grid) {
+        if (g.room < keep || !free(g.x, g.y, r)) continue;
+        const d = (g.x - from.x) * (g.x - from.x) + (g.y - from.y) * (g.y - from.y);
+        if (d < cut) { cut = d; best = g; }
       }
-      return true;
-    };
-    for (let f = 0.72; f >= 0.08; f -= 0.08) {
-      const d = far * f;
-      if (d < 24) break;
-      if (!fits(ux * d, uy * d)) continue;
-      for (const q of mob) { q.x += ux * d; q.y += uy * d; moved(q); }
-      n.plain = true;                          // the bough that fetches them runs straight
-      for (const e of edges) if (e.to === n.id) e.from = p.id;
-      for (const m of marriages) if (m.b === n.id) m.a = p.id;
-      break;
+      if (best) return { x: best.x, y: best.y };
+    }
+    // Nothing in the patch would take him with room to spare: then the
+    // nearest scrap of it that nobody is standing on, and only after that the
+    // nearest scrap at all. Never the middle of the patch -- a patch cut thin
+    // has its middle a long way off, and that fallback was quietly growing the
+    // longest branch in the whole picture.
+    for (const open of [true, false]) {
+      let best = null, cut = Infinity;
+      for (const g of grid.length ? grid : P) {
+        if (open && !free(g.x, g.y, r * 0.55)) continue;
+        const d = (g.x - from.x) * (g.x - from.x) + (g.y - from.y) * (g.y - from.y);
+        if (d < cut) { cut = d; best = g; }
+      }
+      if (best) return { x: best.x, y: best.y };
+    }
+    return { x: from.x, y: from.y };
+  };
+
+  /* ---- setting the names down ---- */
+
+  const massOf = (stem, u) => (u.wife ? wifeLoad(stem, u.id) : weigh(u.id));
+
+  /**
+   * Wood on the way.
+   *
+   * Some stretches of a crown simply have to be crossed: the paper a family
+   * was given is where it is, and the wood has to get there. What must never
+   * happen is that the crossing is made in one straight bare reach -- that is
+   * the branch that looks wrong, and it is what was complained of. A real
+   * bough climbs: it is made of short pieces, each leaving off a little from
+   * the last, and it reads as one limb growing rather than as a rod laid
+   * across the picture. So any reach longer than a stride is walked in strides,
+   * with a joint set down at each footfall, and the wood leans a little from
+   * side to side as it goes the way a bough does.
+   */
+  const STRIDE = 104;
+
+  /** The nearest scrap of a patch to a spot standing outside it. */
+  const doorOf = (P, x, y) => {
+    let best = { x, y }, cut = Infinity;
+    for (let i = 0; i < P.length; i++) {
+      const a = P[i], b = P[(i + 1) % P.length];
+      const ex = b.x - a.x, ey = b.y - a.y;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * ex + (y - a.y) * ey) / (ex * ex + ey * ey || 1)));
+      const qx = a.x + ex * t, qy = a.y + ey * t;
+      const d = (qx - x) * (qx - x) + (qy - y) * (qy - y);
+      if (d < cut) { cut = d; best = { x: qx, y: qy }; }
+    }
+    return best;
+  };
+
+  const stride = (on, x, y, wood, P) => {
+    const sx = on.x, sy = on.y, sid = on.id;
+    const w0 = Math.max(wood, on.w || wood);
+    const dx = x - sx, dy = y - sy;
+    const len = Math.hypot(dx, dy);
+    if (len <= STRIDE * 1.35) return on;
+    const steps = Math.max(1, Math.round(len / STRIDE));
+    const nx = -dy / len, ny = dx / len;
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const bx = sx + dx * t, by = sy + dy * t;
+      // a shallow lean, heaviest in the middle of the run, so the climb bends
+      let lean = Math.sin(t * Math.PI) * Math.min(64, len * 0.16)
+        * (sway(`${sid}~${i}`) - 0.5) * 2;
+      // and never so far that the bough leans out of its own patch
+      while (lean && P && roomAt(P, bx + nx * lean, by + ny * lean) < wood / 3) {
+        lean = Math.abs(lean) < 4 ? 0 : lean * 0.5;
+      }
+      const px = bx + nx * lean, py = by + ny * lean;
+      const jid = `#j${jn++}`;
+      const back = on;
+      nodes.set(jid, {
+        id: jid, person: null, isJoint: true, depth: on.depth,
+        x: px, y: py, angle: Math.atan2(back.y - py, px - back.x), r: 0,
+        // the bough thins as it climbs instead of running on as one slab
+        w: w0 + (wood - w0) * t,
+      });
+      edges.push({ from: back.id, to: jid });
+      // the whole run of wood takes paper, not just the joints on it: a name
+      // dropped between two footfalls used to land squarely on the bough
+      for (let f = 0; f <= 1; f += 0.25) {
+        taken.push({
+          x: back.x + (px - back.x) * f, y: back.y + (py - back.y) * f,
+          r: Math.max(LIMB_MIN_W, wood) / 2,
+        });
+      }
+      on = nodes.get(jid);
+    }
+    return on;
+  };
+
+  /**
+   * Wood on the way.
+   *
+   * Some stretches of a crown simply have to be crossed: the paper a family
+   * was given is where it is, and the wood has to get there. What must never
+   * happen is that the crossing is made in one straight bare reach -- that is
+   * the branch that looks wrong, and it is what was complained of. A real
+   * bough climbs: it is made of short pieces, each leaving off a little from
+   * the last, and it reads as one limb growing rather than as a rod laid
+   * across the picture. So any reach longer than a stride is walked in strides,
+   * with a joint set down at each footfall.
+   *
+   * It is walked in by the door, too. Where the fork feeding a patch is
+   * standing outside it, the wood goes first to the nearest corner of that
+   * patch and only then climbs through it -- because inside its own patch it
+   * can cross nothing, and the one thing a straight run at the far side would
+   * do is cut clean through the brother's patch lying between.
+   */
+  const walk = (stem, x, y, wood, P) => {
+    let on = stem;
+    if (P && P.length > 2 && roomAt(P, on.x, on.y) < 0) {
+      const door = doorOf(P, on.x, on.y);
+      on = stride(on, door.x, door.y, wood, null);
+    }
+    return stride(on, x, y, wood, P);
+  };
+
+  const seat = (id, P, from, known) => {
+    const f = face.get(id);
+    const r = f.disc;
+    const at = known || spotIn(P, r, from, !(kin.get(id) || []).length);
+    taken.push({ x: at.x, y: at.y, r });
+    nodes.set(id, {
+      id, person: tree.people[id], depth: deep.get(id), x: at.x, y: at.y,
+      // He faces the way the wood came to him: that is what bends a branch.
+      angle: Math.atan2(from.y - at.y, at.x - from.x),
+      r,
+      w: woodOf(f.isWife ? wifeLoad(f.man, id) : weigh(id)),
+      isFounder: id === rootId || (f.isWife && f.man === rootId),
+      isLeaf: !f.isWife && kidsOf(id).length === 0,
+      ...(f.isWife ? { isSpouse: true, partnerId: f.man } : {}),
+    });
+    const us = kin.get(id) || [];
+    if (us.length) spread(nodes.get(id), P, us);
+  };
+
+  /**
+   * One man's row of branches, let out into his patch. The row is split in two
+   * by weight, the paper is split in the same proportion, and each half gets a
+   * bare fork of its own part way in -- so ten sons come off a chain of forks
+   * in twos, the way wood really splits, and never off one point as ten spokes.
+   */
+  function spread(stem, P, us) {
+    if (us.length === 1) { hook(stem, us[0], P); return; }
+    const m = us.map((u) => massOf(stem.id, u));
+    const tot = m.reduce((s, v) => s + v, 0) || 1;
+    let run = 0, cut = 1, best = Infinity;
+    for (let i = 1; i < us.length; i++) {
+      run += m[i - 1];
+      const off = Math.abs(run - tot / 2);
+      if (off < best) { best = off; cut = i; }
+    }
+    const w1 = m.slice(0, cut).reduce((s, v) => s + v, 0);
+    const [P1, P2] = share(P, w1 / tot, stem);
+    const halves = [[us.slice(0, cut), P1, w1], [us.slice(cut), P2, tot - w1]];
+    for (const [grp, patch, mass] of halves) {
+      if (!patch.length) continue;
+      if (grp.length === 1) { hook(stem, grp[0], patch); continue; }
+      const wood = woodOf(mass);
+      // A fork needs no room of its own: it is a place where wood splits,
+      // and it wants to sit as near the wood that feeds it as it can.
+      const at = spotIn(patch, LIMB_MIN_W / 2, stem);
+      const on = walk(stem, at.x, at.y, wood, patch);
+      const jid = `#j${jn++}`;
+      taken.push({ x: at.x, y: at.y, r: LIMB_MIN_W / 2 });
+      nodes.set(jid, {
+        id: jid, person: null, isJoint: true, depth: stem.depth,
+        x: at.x, y: at.y,
+        angle: Math.atan2(on.y - at.y, at.x - on.x), r: 0, w: wood,
+      });
+      edges.push({ from: on.id, to: jid });
+      spread(nodes.get(jid), patch, grp);
     }
   }
 
-  // A fork only ever existed to carry somebody. Where the name it was carrying
-  // has been walked back in to his father, the fork is left holding nothing,
-  // and a branch that ends in mid-air is worse to look at than the long branch
-  // it replaced. So every joint with nothing beyond it is cut away, over and
-  // over, until none is left.
-  snip();
+  function hook(stem, u, P) {
+    const f = face.get(u.id);
+    const r = f.disc;
+    // A wife stands beside her husband, never off in the middle of the paper
+    // her family was given: the wood that marries them is a short branch off
+    // him, and it has to read that way.
+    const at = spotIn(P, r, stem, !u.wife && !(kin.get(u.id) || []).length);
+    const on = walk(stem, at.x, at.y, woodOf(massOf(stem.id, u)), P);
+    if (u.wife) marriages.push({ a: on.id, b: u.id });
+    else edges.push({ from: on.id, to: u.id });
+    seat(u.id, P, on, at);
+  }
+
+  seat(rootId, crown, { x: 0, y: ROOT_Y });
 
   let reach = 0;
   for (const n of nodes.values()) reach = Math.max(reach, Math.hypot(n.x, n.y - ROOT_Y));
