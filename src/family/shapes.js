@@ -76,7 +76,13 @@ export function limbCurve(from, to, off) {
   // the limb stops at the rim of the child's circle, measured back along the
   // way the child itself grows, not straight down the page
   const b = { x: to.x - Math.cos(ta) * off, y: to.y + Math.sin(ta) * off };
-  const h = limbHandles(a.x, a.y, b.x, b.y, fa, ta, sway(`${from.id}>${to.id}`));
+  // A bare fork carries no lean. The big structural wood runs through a chain
+  // of them, and giving each stretch its own lean made the chain zigzag: what
+  // should read as one limb climbing came out as a row of kinks. It still
+  // curves, because the two ends face different ways -- that is enough.
+  const bare = from.isJoint || to.isJoint;
+  const h = limbHandles(a.x, a.y, b.x, b.y, fa, ta,
+    bare ? 0.5 : sway(`${from.id}>${to.id}`));
   return [a, { x: h.c1x, y: h.c1y }, { x: h.c2x, y: h.c2y }, b];
 }
 

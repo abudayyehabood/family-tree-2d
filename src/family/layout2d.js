@@ -10,10 +10,10 @@ const PAD = 56;
 
 // How far round the trunk the whole crown opens. A little past a half circle,
 // so the outer limbs come down the sides the way a real canopy does.
-const CROWN = (162 * Math.PI) / 180;
-const SEG = 176;                 // the least a branch ever reaches out
-const ROOM = 104;               // the arc of sky one single name keeps to itself
-const KEEP = 0.94;               // the air a child leaves at the edge of its wedge
+const CROWN = (290 * Math.PI) / 180;
+const SKY = 1.5;                 // how much taller the crown is drawn than reckoned
+const SEG = 84;                 // the least a branch ever reaches out, per fork
+const PITCH = 66;                // the least paper two names in one rank need
 
 const TWIG_W = 11;               // the wood one single name is worth
 const LIMB_MIN_W = TWIG_W;       // even the last twig is wood, not a wire
@@ -81,6 +81,80 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   const woodOf = (n) => Math.max(LIMB_MIN_W, TWIG_W * Math.sqrt(Math.max(1, n)));
 
   /**
+   * One person's row of branches, read the same way by both passes below.
+   * A wife carries the children that are hers; a man carries the children of
+   * no wife of his, plus one branch for each wife he married. His wives set
+   * off to his sides and his own children up the middle, so a marriage reads
+   * as a branch off him and never as a rod between two circles.
+   *
+   * The biggest family goes up the middle and the rest fall away to either
+   * side of it, turn and turn about. Taken in the order they were written
+   * down, the eldest with thirty names behind him lands on whichever edge of
+   * the fan he happens to fall, and drags the whole tree over with him -- that
+   * is why the crown used to hang off one shoulder.
+   */
+  const unitsOf = (id, isWife, man) => {
+    const wives = isWife ? [] : wivesOf(id);
+    const seated = new Set(wives.map((w) => w.id));
+    const kids = isWife
+      ? kidsOf(man).filter((k) => tree.people[k].motherId === id)
+      : kidsOf(id).filter((k) => {
+        const m = tree.people[k].motherId;
+        return !(m && seated.has(m));
+      });
+    const mid = [];
+    [...kids].sort((a, b) => weigh(b) - weigh(a))
+      .forEach((k, i) => { if (i % 2) mid.unshift(k); else mid.push(k); });
+    const half = Math.ceil(wives.length / 2);
+    return [
+      ...wives.slice(0, half).map((w) => ({ id: w.id, wife: true })),
+      ...mid.map((k) => ({ id: k })),
+      ...wives.slice(half).map((w) => ({ id: w.id, wife: true })),
+    ];
+  };
+
+  /**
+   * Before a single name is set down: which ring each of them stands on, and
+   * how much arc that ring owes them.
+   *
+   * Every generation gets its own ring, evenly spaced out from the trunk. That
+   * is the whole difference between a crown and a firework. When the distance
+   * out was worked back from how much arc a row of brothers needed, a small
+   * family deep in the tree -- with a sliver of sky to its name -- had to be
+   * flung enormously far out before its two sons fit side by side in it, and
+   * the picture came out as a handful of gigantic bare spokes with all the
+   * names crowded onto the very tips. Standing them on rings instead puts
+   * names at every distance from the trunk, which is what fills a crown.
+   *
+   * The sky is then handed out by what each family will actually need when it
+   * gets there. A name out on the fifth ring is standing a long way round, so
+   * a little angle already buys it all the paper it wants; a name on the first
+   * ring needs a great deal more. Each person asks for what his own family
+   * asks for, or for enough room to stand up himself, whichever is the more.
+   */
+  const lvl = new Map();
+  const need = new Map();
+  const askOf = (L) => PITCH / Math.max(1, L);
+  const walk = (id, isWife, man, L) => {
+    if (lvl.has(id)) return need.get(id) || askOf(L);
+    lvl.set(id, L);
+    need.set(id, askOf(L));                       // guard against a bad cycle
+    let sum = 0;
+    for (const u of unitsOf(id, isWife, man))
+      sum += walk(u.id, Boolean(u.wife), isWife ? man : id, L + 1);
+    const n = Math.max(askOf(L), sum);
+    need.set(id, n);
+    return n;
+  };
+  walk(rootId, false, null, 0);
+
+  // The whole crown is exactly as wide as the sky it was given, so the gap
+  // between two rings falls out of the asking: all of it, divided by all the
+  // sky there is. It is never let below the room one name needs to stand clear
+  // of the ring behind it.
+  const STEP = Math.max(NODE_R * 2 + SEG, need.get(rootId) / CROWN);
+
+  /**
    * @param dir   the way out of the trunk this person sits along
    * @param r     how far from the top of the trunk he stands
    * @param span  the slice of sky that is his to give away
@@ -100,41 +174,19 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       ...(isWife ? { isSpouse: true, partnerId: man } : {}),
     });
 
-    // A wife carries the children that are hers; a man carries the children of
-    // no wife of his, plus one branch for each wife he married.
-    const wives = isWife ? [] : wivesOf(id);
-    const seated = new Set(wives.map((w) => w.id));
-    const kids = isWife
-      ? kidsOf(man).filter((k) => tree.people[k].motherId === id)
-      : kidsOf(id).filter((k) => {
-        const m = tree.people[k].motherId;
-        return !(m && seated.has(m));
-      });
-
-    // His wives set off to his sides and his own children up the middle, so a
-    // marriage reads as a branch off him and never as a rod between two circles.
-    const half = Math.ceil(wives.length / 2);
-    const units = [
-      ...wives.slice(0, half).map((w) => ({ id: w.id, wife: true })),
-      ...kids.map((k) => ({ id: k })),
-      ...wives.slice(half).map((w) => ({ id: w.id, wife: true })),
-    ];
+    const units = unitsOf(id, isWife, man);
     if (!units.length) return;
 
     const mass = units.map((u) => (u.wife ? wifeLoad(id, u.id) : weigh(u.id)));
-    const total = mass.reduce((s, m) => s + m, 0) || 1;
+    const share = units.map((u) => need.get(u.id) || PITCH);
+    const total = share.reduce((sum, m) => sum + m, 0) || 1;
 
-    // The ring they all stand on: near enough that they still read as his, far
-    // enough that every slice he just cut is wide enough to hold the names it
-    // was given. That second number is the one that matters.
-    //
-    // Brothers share one ring, exactly, and that is not tidiness -- it is the
-    // second half of the no-crossing promise. Everything that is not his own
-    // stands at this distance or beyond it, so the wood running out to each of
-    // his children is the only wood anywhere inside the ring, and it has
-    // nothing to cross. Let one brother sit short of the ring and the branch
-    // reaching past him cuts straight through his family.
-    const ring = Math.max(r + SEG, (total * ROOM) / Math.max(span, 0.14));
+    // His whole row stands on the next ring out, all of them, exactly. That is
+    // not tidiness: it is the no-crossing promise. Everything that is not his
+    // own wood stands at this distance or beyond it, so the branches running
+    // out to his children are the only wood anywhere inside the ring, and they
+    // have nothing to cross.
+    const ring = (lvl.get(id) + 1) * STEP;
 
     // ---- and now the wood is let out to them, forking two at a time ----
     // Fanning ten sons straight off one point gives a hub with ten long
@@ -149,6 +201,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     // reason the brothers do: nothing may stand inside the circle the wood of
     // that round is crossing.
     const massOf = (g) => g.reduce((s, i) => s + mass[i], 0);
+    const shareOf = (g) => g.reduce((s, i) => s + share[i], 0);
     const halve = (g) => {
       if (g.length < 2) return [g];
       const tot = massOf(g);
@@ -162,24 +215,24 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     };
 
     const fan = (stem, sDir, sR, sSpan, g, left) => {
-      const tot = massOf(g) || 1;
+      const tot = shareOf(g) || 1;
       let edge = sDir + sSpan / 2;
       if (left <= 1) {                       // the last fork: the names themselves
         for (const i of g) {
-          const slice = (sSpan * mass[i]) / tot;
-          const at = edge - slice / 2;
-          edge -= slice;
+          const sliceOf = (sSpan * share[i]) / tot;
+          const at = edge - sliceOf / 2;
+          edge -= sliceOf;
           const u = units[i];
           if (u.wife) marriages.push({ a: stem, b: u.id });
           else edges.push({ from: stem, to: u.id });
-          place(u.id, at, ring, slice * KEEP,
+          place(u.id, at, ring, sliceOf,
             depth + (u.wife ? 0 : 1), Boolean(u.wife), id);
         }
         return;
       }
       const stepR = sR + (ring - sR) / left;
       for (const grp of halve(g)) {
-        const slice = (sSpan * massOf(grp)) / tot;
+        const slice = (sSpan * shareOf(grp)) / tot;
         const at = edge - slice / 2;
         edge -= slice;
         const fork = `#j${jn++}`;
@@ -197,6 +250,20 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   };
   place(rootId, Math.PI / 2, 0, CROWN, 0, false, null);
 
+  // A crown built out of one point is a half circle, and a half circle is
+  // twice as wide as it is tall: the tree came out as a flat fan lying across
+  // the paper, nothing like the round head of a real tree. So the whole crown
+  // is drawn up taller than it was reckoned. Only the standing-apart in the
+  // upright direction changes, and it only ever grows, so nothing that was
+  // clear of anything else can be brought into it. Each name's own heading is
+  // pulled up with it, or the wood would arrive at a name pointing the way it
+  // used to stand rather than the way it now does.
+  for (const n of nodes.values()) {
+    const up = ROOT_Y - n.y;
+    n.y = ROOT_Y - up * SKY;
+    n.angle = Math.atan2(Math.sin(n.angle) * SKY, Math.cos(n.angle));
+  }
+
   let reach = 0;
   for (const n of nodes.values()) reach = Math.max(reach, Math.hypot(n.x, n.y - ROOT_Y));
 
@@ -205,7 +272,11 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   // half the crown's own reach so the tree is a tree and not a bush on a post.
   trunk.topW = woodOf(weigh(rootId)) * 1.12;
   trunk.baseW = trunk.topW * 1.9;
-  trunk.h = Math.max(300, reach * 0.30);
+  // The bole stands under the crown and no lower. Running it on past the
+  // lowest branch just adds bare paper at the foot of the picture.
+  let hang = 0;
+  for (const n of nodes.values()) hang = Math.max(hang, n.y - ROOT_Y);
+  trunk.h = Math.max(280, hang + reach * 0.20);
 
   // ---- bounds ----
   const wide = trunk.baseW * 2.6;
