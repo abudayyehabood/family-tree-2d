@@ -11,8 +11,9 @@ export function sway(str) {
   return ((h >>> 0) % 1000) / 1000;
 }
 
-const REACH = 0.42;   // how far along itself a branch carries its own heading
-const BOW = 0.06;    // and how far it leans off the straight line on the way
+const REACH = 0.34;   // how far along itself a branch carries its own heading
+const BOW = 0.018;   // and how far it leans off the straight line on the way
+const LIMP = 190;    // past this length a branch stops leaning any further
 
 /**
  * No branch on a real tree is a ruler line. This one leaves its father growing
@@ -32,9 +33,14 @@ export function limbHandles(ax, ay, bx, by, fa, ta, seed) {
   const reach = Math.max(34, len * REACH);
   // across the branch, so the lean is a lean and not a stretch
   const nx = -ey / len, ny = ex / len;
+  // The lean is measured off a capped length, not off the branch's own. A
+  // long branch bowed by a share of itself came out as a great snaking S --
+  // the further the wood had to travel, the more it wandered on the way, which
+  // is exactly backwards. Wood wanders by an inch or two, and a long limb just
+  // runs straighter for longer.
   const lean = (seed - 0.5) * 2;                     // which side, and how much
-  const b1 = BOW * len * lean;
-  const b2 = BOW * len * lean * 0.55;                // it straightens out by the tip
+  const b1 = BOW * Math.min(len, LIMP) * lean;
+  const b2 = BOW * Math.min(len, LIMP) * lean * 0.55; // it straightens by the tip
   return {
     c1x: ax + Math.cos(fa) * reach + nx * b1,
     c1y: ay - Math.sin(fa) * reach + ny * b1,

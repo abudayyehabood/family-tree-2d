@@ -10,12 +10,12 @@ const PAD = 56;
 
 // How far round the trunk the whole crown opens. A little past a half circle,
 // so the outer limbs come down the sides the way a real canopy does.
-const CROWN = (290 * Math.PI) / 180;
-const SKY = 1.5;                 // how much taller the crown is drawn than reckoned
+const CROWN = (342 * Math.PI) / 180;
+const SKY = 1.4;                 // how much taller the crown is drawn than reckoned
 const SEG = 84;                 // the least a branch ever reaches out, per fork
-const PITCH = 66;                // the least paper two names in one rank need
+const GAP = 9;                   // clear paper a name keeps around itself
 
-const TWIG_W = 11;               // the wood one single name is worth
+const TWIG_W = 13;               // the wood one single name is worth
 const LIMB_MIN_W = TWIG_W;       // even the last twig is wood, not a wire
 
 /**
@@ -113,46 +113,79 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     ];
   };
 
-  /**
-   * Before a single name is set down: which ring each of them stands on, and
-   * how much arc that ring owes them.
+/**
+   * Before a single name is set down: how much sky each man is asking for,
+   * how much he is given, and how far out his generation stands.
    *
-   * Every generation gets its own ring, evenly spaced out from the trunk. That
-   * is the whole difference between a crown and a firework. When the distance
-   * out was worked back from how much arc a row of brothers needed, a small
-   * family deep in the tree -- with a sliver of sky to its name -- had to be
-   * flung enormously far out before its two sons fit side by side in it, and
-   * the picture came out as a handful of gigantic bare spokes with all the
-   * names crowded onto the very tips. Standing them on rings instead puts
-   * names at every distance from the trunk, which is what fills a crown.
+   * These three answer each other, so they are asked over and over until none
+   * of them moves any more.
    *
-   * The sky is then handed out by what each family will actually need when it
-   * gets there. A name out on the fifth ring is standing a long way round, so
-   * a little angle already buys it all the paper it wants; a name on the first
-   * ring needs a great deal more. Each person asks for what his own family
-   * asks for, or for enough room to stand up himself, whichever is the more.
+   *  - What a man asks for is the sky his sons ask for, added up, or enough
+   *    for his own name to stand where he stands, whichever is the more. So
+   *    the room a father or a wife needs is exactly the number of sons behind
+   *    them -- which is what decides how far out the short sideways wood goes.
+   *  - What he is given is his father's sky, cut up between the brothers in
+   *    the proportion of what each of them asked for.
+   *  - A generation stands far enough out that the narrowest slice of sky
+   *    handed to anyone in it is finally wide enough to hold a name, and one
+   *    branch's reach past the generation before it. Nothing more.
+   *
+   * The last of those is the whole of the user's complaint. Every generation
+   * used to stand on a ring set by the single widest row in the tree, so a man
+   * with two sons handed each of them the same enormous bare branch that the
+   * largest family in the house had earned, and the middle of the crown came
+   * out hollow with all the names pushed onto the rim. Now a generation comes
+   * in as close as its own crowding allows, the rings sit tight together, and
+   * the crown fills.
    */
-  const lvl = new Map();
-  const need = new Map();
-  const askOf = (L) => PITCH / Math.max(1, L);
-  const walk = (id, isWife, man, L) => {
-    if (lvl.has(id)) return need.get(id) || askOf(L);
-    lvl.set(id, L);
-    need.set(id, askOf(L));                       // guard against a bad cycle
-    let sum = 0;
-    for (const u of unitsOf(id, isWife, man))
-      sum += walk(u.id, Boolean(u.wife), isWife ? man : id, L + 1);
-    const n = Math.max(askOf(L), sum);
-    need.set(id, n);
-    return n;
+  const kin = new Map();                       // id -> his row of branches
+  const face = new Map();                      // id -> {isWife, man, disc}
+  const deep = new Map();                      // id -> generations from the root
+  const rank = [];                             // generation -> everyone in it
+  const order = [];                            // fathers before sons, always
+  const collect = (id, isWife, man, L) => {
+    if (face.has(id)) return;
+    face.set(id, { isWife, man, disc: isWife ? wifeR(man) : discR(id) });
+    deep.set(id, L);
+    (rank[L] = rank[L] || []).push(id);
+    order.push(id);
+    const us = unitsOf(id, isWife, man);
+    kin.set(id, us);
+    for (const u of us) collect(u.id, Boolean(u.wife), isWife ? man : id, L + 1);
   };
-  walk(rootId, false, null, 0);
+  collect(rootId, false, null, 0);
 
-  // The whole crown is exactly as wide as the sky it was given, so the gap
-  // between two rings falls out of the asking: all of it, divided by all the
-  // sky there is. It is never let below the room one name needs to stand clear
-  // of the ring behind it.
-  const STEP = Math.max(NODE_R * 2 + SEG, need.get(rootId) / CROWN);
+  const A = new Map();                          // the sky he is asking for
+  const SPAN = new Map();                       // the sky he was given
+  const RING = rank.map((_, L) => L * SEG);     // how far out each generation is
+  const roomOf = (id) => face.get(id).disc + GAP;
+  const fitAt = (a) => Math.sin(Math.min(Math.PI / 2, Math.max(a, 1e-6) / 2));
+
+  for (let pass = 0; pass < 40; pass++) {
+    for (let i = order.length - 1; i >= 0; i--) {          // the asking
+      const id = order[i];
+      let sum = 0;
+      for (const u of kin.get(id)) sum += A.get(u.id) || 0;
+      const rr = Math.max(1, RING[deep.get(id)]);
+      const own = id === rootId
+        ? 0 : 2 * Math.asin(Math.min(0.92, roomOf(id) / rr));
+      A.set(id, Math.max(own, sum));
+    }
+    SPAN.set(rootId, CROWN);
+    for (const id of order) {                              // the giving
+      const us = kin.get(id);
+      let tot = 0;
+      for (const u of us) tot += A.get(u.id);
+      tot = tot || 1;
+      for (const u of us) SPAN.set(u.id, (SPAN.get(id) * A.get(u.id)) / tot);
+    }
+    for (let L = 1; L < rank.length; L++) {                // the standing out
+      let want = RING[L - 1] + SEG;
+      for (const id of rank[L])
+        want = Math.max(want, roomOf(id) / fitAt(SPAN.get(id)));
+      RING[L] = want;
+    }
+  }
 
   /**
    * @param dir   the way out of the trunk this person sits along
@@ -174,19 +207,18 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       ...(isWife ? { isSpouse: true, partnerId: man } : {}),
     });
 
-    const units = unitsOf(id, isWife, man);
+    const units = kin.get(id) || [];
     if (!units.length) return;
 
     const mass = units.map((u) => (u.wife ? wifeLoad(id, u.id) : weigh(u.id)));
-    const share = units.map((u) => need.get(u.id) || PITCH);
-    const total = share.reduce((sum, m) => sum + m, 0) || 1;
+    const share = units.map((u) => Math.max(A.get(u.id) || 0, 1e-6));
 
-    // His whole row stands on the next ring out, all of them, exactly. That is
-    // not tidiness: it is the no-crossing promise. Everything that is not his
-    // own wood stands at this distance or beyond it, so the branches running
-    // out to his children are the only wood anywhere inside the ring, and they
-    // have nothing to cross.
-    const ring = (lvl.get(id) + 1) * STEP;
+    // His whole row stands on the next generation's ring, all of them,
+    // exactly. That is not tidiness: it is the no-crossing promise. Everything
+    // that is not his own wood stands at this distance or beyond it, so the
+    // branches running out to his children are the only wood anywhere inside
+    // the ring, and they have nothing to cross.
+    const ring = RING[deep.get(id) + 1];
 
     // ---- and now the wood is let out to them, forking two at a time ----
     // Fanning ten sons straight off one point gives a hub with ten long
