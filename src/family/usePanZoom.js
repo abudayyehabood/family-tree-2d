@@ -28,7 +28,7 @@ function setClass(el, name, on) {
   el.setAttribute('class', parts.join(' '));
 }
 
-export function usePanZoom(svgRef, gRef, bounds, onGestureStart) {
+export function usePanZoom(svgRef, gRef, bounds, onGestureStart, nodeDrag) {
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const live = useRef(view);              // the truth while fingers are down
   const frame = useRef(0);
@@ -126,6 +126,10 @@ export function usePanZoom(svgRef, gRef, bounds, onGestureStart) {
     // opens a person's card.
     const down = (e) => {
       const t = e.touches;
+      // A finger laid on a circle is dragging that circle, not the whole
+      // picture. The move itself is run on pointer events; here the pan is
+      // only got out of the way.
+      if (e.target.closest?.('.circle-person')) { drag.current = null; pinch.current = null; return; }
       if (t.length === 1) {
         pinch.current = null;
         startDrag(t[0].clientX, t[0].clientY);
@@ -150,7 +154,11 @@ export function usePanZoom(svgRef, gRef, bounds, onGestureStart) {
       if (t.length === 1 && drag.current) {
         e.preventDefault();
         moveDrag(t[0].clientX, t[0].clientY);
+        return;
       }
+      // While a circle is being dragged the page must not be allowed to
+      // scroll: iOS takes the pointer away the moment it thinks it might.
+      if (t.length === 1 && nodeDrag?.current) e.preventDefault();
     };
 
     const up = (e) => {
@@ -170,7 +178,7 @@ export function usePanZoom(svgRef, gRef, bounds, onGestureStart) {
       el.removeEventListener('touchend', up);
       el.removeEventListener('touchcancel', up);
     };
-  }, [svgRef, startDrag, moveDrag, toUser, move, zoomAbout, commit]);
+  }, [svgRef, startDrag, moveDrag, toUser, move, zoomAbout, commit, nodeDrag]);
 
   // ---- mouse and trackpad ----
   const onPointerDown = (e) => {

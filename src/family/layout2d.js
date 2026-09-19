@@ -574,3 +574,36 @@ export function layoutTree(tree, childrenOf, spouseOf) {
  * circle is painted over the wood afterwards, so the overlap never shows.
  */
 export const inset = (n) => (n.isJoint ? 0 : (n.r || NODE_R) * 0.45);
+
+/**
+ * The same crown, with the names a hand has dragged put where the hand left
+ * them. The move is applied after the tree is settled, not during it: a hand
+ * outranks the cutting, and the wood follows because a limb is drawn between
+ * whatever two spots its ends are standing on. Only the dragged name moves --
+ * his sons stay where the tree put them and his branch stretches to reach him.
+ */
+export function withSpots(layout, spots) {
+  const ids = spots ? Object.keys(spots) : [];
+  if (!ids.length) return layout;
+
+  const nodes = new Map();
+  for (const [id, n] of layout.nodes) {
+    const s = spots[id];
+    nodes.set(id, s ? { ...n, x: n.x + s.dx, y: n.y + s.dy, moved: true } : n);
+  }
+
+  // the paper is let out to hold anyone dragged off the edge of it
+  const b = layout.bounds;
+  let minX = b.x, minY = b.y, maxX = b.x + b.w, maxY = b.y + b.h;
+  for (const id of ids) {
+    const n = nodes.get(id);
+    if (!n) continue;
+    const r = (n.r || NODE_R) + 30 + PAD;
+    minX = Math.min(minX, n.x - r);
+    maxX = Math.max(maxX, n.x + r);
+    minY = Math.min(minY, n.y - r);
+    maxY = Math.max(maxY, n.y + r);
+  }
+
+  return { ...layout, nodes, bounds: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } };
+}

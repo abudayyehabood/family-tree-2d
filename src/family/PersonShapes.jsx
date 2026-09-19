@@ -15,7 +15,7 @@ export function fitName(name = '', r = NODE_R) {
 }
 
 /** Everyone on the tree is a circle with their name written inside it. */
-export function PersonShape({ node, selected, onSelect, onFocus }) {
+export function PersonShape({ node, selected, onSelect, onFocus, onGrab }) {
   const { person } = node;
   const r = node.r || NODE_R;
   const { lines, size } = fitName(person.name, r);
@@ -32,7 +32,7 @@ export function PersonShape({ node, selected, onSelect, onFocus }) {
 
   return (
     <g className={cls} data-id={node.id} transform={`translate(${node.x} ${node.y})`}
-       onPointerDown={(e) => { e.stopPropagation(); onSelect(node.id); }}
+       onPointerDown={(e) => { e.stopPropagation(); onGrab?.(node.id, e); }}
        onClick={(e) => { e.stopPropagation(); onSelect(node.id); }}
        onDoubleClick={(e) => { e.stopPropagation(); onFocus?.(node.id); }}>
       {selected && <circle r={r + 9} className="halo" />}

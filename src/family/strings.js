@@ -28,6 +28,7 @@ export const S = {
   removeBranch: 'حذف الفرع المحدد',
   startOver: 'البدء من جديد',
   resetView: 'إعادة الضبط',
+  undoMoves: 'رجوع الأسماء لأماكنها',
   zoomIn: 'تكبير',
   zoomOut: 'تصغير',
   print: 'طباعة',

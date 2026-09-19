@@ -19,6 +19,7 @@ export default function App() {
         tree={t.tree}
         childrenOf={t.childrenOf}
         spouseOf={t.spouseOf}
+        spots={t.spots}
         founderId={t.founderId}
         selectedId={selectedId}
         onSelect={setSelectedId}
@@ -26,6 +27,8 @@ export default function App() {
         onAddAncestor={t.addAncestor}
         onAddSpouse={t.addSpouse}
         onEdit={t.updatePerson}
+        onMove={t.movePerson}
+        onClearSpots={t.clearSpots}
         onRemove={(id) => { t.removePerson(id); setSelectedId(t.founderId); }}
       />
 

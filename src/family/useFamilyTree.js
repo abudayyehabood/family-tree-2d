@@ -5,6 +5,16 @@ const nextId = () => `p${++seq}`;
 
 const emptyTree = () => ({ people: {}, rootId: null });
 
+/** Where a hand has dragged someone, measured off where the tree put him. */
+const cleanSpots = (raw) => {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [id, s] of Object.entries(raw)) {
+    if (s && Number.isFinite(s.dx) && Number.isFinite(s.dy)) out[id] = { dx: s.dx, dy: s.dy };
+  }
+  return out;
+};
+
 const STORE = 'family-tree-v1';
 
 /** The tree lives in this browser, so closing the page does not lose it. */
@@ -18,7 +28,7 @@ function loadTree() {
       const n = Number(String(id).replace(/^p/, ''));
       if (Number.isFinite(n) && n > seq) seq = n;      // never reuse an id
     }
-    return { people: t.people, rootId: t.rootId ?? null };
+    return { people: t.people, rootId: t.rootId ?? null, spots: cleanSpots(t.spots) };
   } catch {
     return emptyTree();
   }
@@ -41,18 +51,50 @@ const makePerson = (fields, extra) => ({
  * carries the whole crown; everyone after that is somebody's child or spouse.
  */
 export function useFamilyTree() {
-  const [tree, setTree] = useState(loadTree);
+  const [stored] = useState(loadTree);
+  const [tree, setTree] = useState(() => ({ people: stored.people, rootId: stored.rootId }));
+  // Hand-placed names are kept apart from the family itself. Dragging a circle
+  // must not make the whole crown be settled again from scratch, and it does
+  // not change who anybody is -- only where his circle sits on the paper.
+  const [spots, setSpots] = useState(() => cleanSpots(stored.spots));
   const [saved, setSaved] = useState({ at: null, failed: false });
 
   // every single change is written straight back to this browser
   useEffect(() => {
     try {
-      localStorage.setItem(STORE, JSON.stringify(tree));
+      localStorage.setItem(STORE, JSON.stringify({ ...tree, spots }));
       setSaved({ at: Date.now(), failed: false });
     } catch {
       setSaved({ at: null, failed: true });      // private mode, or disk full
     }
-  }, [tree]);
+  }, [tree, spots]);
+
+  /**
+   * Nudge one circle by hand. It is remembered as a shift off the spot the
+   * tree itself chose, not as a place on the paper, so the name keeps his
+   * hand-given position even after the crown is re-cut around a new birth.
+   */
+  const movePerson = useCallback((id, dx, dy) => {
+    setSpots((s) => {
+      const was = s[id] || { dx: 0, dy: 0 };
+      const now = { dx: was.dx + dx, dy: was.dy + dy };
+      if (Math.abs(now.dx) < 0.5 && Math.abs(now.dy) < 0.5) {
+        const { [id]: gone, ...rest } = s;
+        return rest;
+      }
+      return { ...s, [id]: now };
+    });
+  }, []);
+
+  /** Give every hand-moved name back to the tree. */
+  const clearSpots = useCallback((id) => {
+    setSpots((s) => {
+      if (!id) return {};
+      if (!s[id]) return s;
+      const { [id]: gone, ...rest } = s;
+      return rest;
+    });
+  }, []);
 
   /** Plant the oldest ancestor, or rename him later. */
   const setRoot = useCallback((fields) => {
@@ -144,12 +186,12 @@ export function useFamilyTree() {
     });
   }, []);
 
-  const reset = useCallback(() => setTree(emptyTree()), []);
+  const reset = useCallback(() => { setSpots({}); setTree(emptyTree()); }, []);
 
   /** A backup file the family can keep, mail, or move to another phone. */
   const exportTree = useCallback(() => JSON.stringify(
-    { app: 'family-tree', version: 1, savedAt: new Date().toISOString(), tree }, null, 2
-  ), [tree]);
+    { app: 'family-tree', version: 1, savedAt: new Date().toISOString(), tree: { ...tree, spots } }, null, 2
+  ), [tree, spots]);
 
   const importTree = useCallback((text) => {
     const data = JSON.parse(text);
@@ -159,6 +201,7 @@ export function useFamilyTree() {
       const n = Number(String(id).replace(/^p/, ''));
       if (Number.isFinite(n) && n > seq) seq = n;
     }
+    setSpots(cleanSpots(t.spots));
     setTree({ people: t.people, rootId: t.rootId ?? null });
   }, []);
 
@@ -193,9 +236,10 @@ export function useFamilyTree() {
   }, [tree.people]);
 
   return {
-    tree, childrenOf, spouseOf,
+    tree, childrenOf, spouseOf, spots,
     founderId: tree.rootId,
     setRoot, addChild, addAncestor, addSpouse, updatePerson, removePerson, reset,
+    movePerson, clearSpots,
     saved, exportTree, importTree,
   };
 }

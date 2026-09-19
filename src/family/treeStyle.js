@@ -21,7 +21,8 @@ export const TREE_CSS = `
 .leaf-rib { stroke: #e9f2d8; stroke-width: 1.1; opacity: 0.45; fill: none; }
 .leaf-vein { stroke: #e9f2d8; stroke-width: 0.7; opacity: 0.32; fill: none; }
 
-.person { cursor: pointer; }
+.person { cursor: grab; }
+.person:active { cursor: grabbing; }
 .halo { fill: #e0a92c; opacity: 0.28; }
 .disc { fill: #fdfbf3; stroke: #5a3a24; stroke-width: 1.8; }
 .circle-person.is-male .disc { fill: #cfe3f7; stroke: #2f6ea8; }
