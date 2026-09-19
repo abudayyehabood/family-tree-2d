@@ -50,21 +50,28 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   const weigh = (id) => {
     if (load.has(id)) return load.get(id);
     load.set(id, 1);                              // guard against a bad cycle
-    const kids = kidsOf(id);
-    const n = (kids.length ? kids.reduce((s, k) => s + weigh(k), 0) : 1)
-      + wivesOf(id).length * 0.5;
+    // Every circle behind him, himself counted. It used to be the leaves
+    // alone, so a man with eight sons weighed eight while eleven circles --
+    // he, his two wives and the eight -- had to stand in the paper that
+    // weight bought. Deep down the tree the shortfall piled up and the last
+    // household was handed a patch too small to hold itself.
+    const n = 1 + kidsOf(id).reduce((s, k) => s + weigh(k), 0) + wivesOf(id).length;
     load.set(id, n);
     return n;
   };
   weigh(rootId);
   const wifeLoad = (man, wifeId) =>
-    0.5 + kidsOf(man)
+    1 + kidsOf(man)
       .filter((k) => tree.people[k].motherId === wifeId)
       .reduce((s, k) => s + weigh(k), 0);
 
   /** Leonardo, read from the end where it is true: one name, one twig. */
   let jn = 0;                                     // bare forks carry no name
-  const woodOf = (n) => Math.max(LIMB_MIN_W, TWIG_W * Math.sqrt(Math.max(1, n)));
+  // Wood grows with the family behind it, but not as fast as the family does.
+  // True area-for-area it would be the square root, and at sixty names that
+  // gave a bough a hundred points thick standing in the middle of the crown
+  // -- a brown slab with the near half of the family sitting on it.
+  const woodOf = (n) => Math.max(LIMB_MIN_W, TWIG_W * Math.pow(Math.max(1, n), 0.44));
 
   /**
    * One person's row of branches, read the same way by both passes below.
@@ -167,7 +174,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
 
   const heads = order.length;                    // every name that must fit
   const cell = Math.PI * (NODE_R + GAP) * (NODE_R + GAP);
-  const SLACK = 3.2;                             // wood and leaves want the rest
+  const SLACK = 5.5;                             // wood and leaves want the rest
   const TALL = 1.06;                             // a touch taller than it is wide
   const RX = Math.sqrt((heads * cell * SLACK) / (Math.PI * TALL));
   const RY = RX * TALL;
@@ -239,6 +246,19 @@ export function layoutTree(tree, childrenOf, spouseOf) {
   const awayFrom = (P, x, y) => Math.max(0, -roomAt(P, x, y));
 
   /** How far from square a patch is. A sliver is a wedge under another name. */
+  /**
+   * The biggest circle a patch could hold, near enough: twice its area over
+   * its edge, which is exact for anything a circle can be drawn inside and
+   * close for everything else.
+   *
+   * It used to be judged by the sides of its bounding box instead, and that
+   * is blind to the shape that actually hurts -- a long thin sliver running
+   * corner to corner has a bounding box as square as a square does. Whole
+   * households were being handed four hundred by seven hundred points of
+   * paper with seven thousand points of area in it, which is a ribbon three
+   * names could not stand side by side in, and they ended up piled on one
+   * another.
+   */
   const slim = (P) => {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const p of P) {
@@ -247,6 +267,15 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     }
     const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0);
     return Math.max(w / h, h / w);
+  };
+
+  const fitR = (P) => {
+    let edge = 0;
+    for (let i = 0; i < P.length; i++) {
+      const a = P[i], b = P[(i + 1) % P.length];
+      edge += Math.hypot(b.x - a.x, b.y - a.y);
+    }
+    return edge ? (2 * areaOf(P)) / edge : 0;
   };
 
   /**
@@ -261,6 +290,8 @@ export function layoutTree(tree, childrenOf, spouseOf) {
    * paper fixes where along that direction the cut falls, and the direction
    * that comes off best on both counts wins.
    */
+  const NEED = NODE_R + GAP;       // the paper one name has to have to stand
+  const FAT = 10;                   // how dearly a sliver is paid for
   const share = (P, frac, from) => {
     const want = areaOf(P) * Math.min(0.94, Math.max(0.06, frac));
     let bestScore = Infinity, cut = null;
@@ -281,17 +312,90 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       const H1 = clip(P, nx, ny, d), H2 = clip(P, -nx, -ny, -d);
       if (H1.length < 3 || H2.length < 3) continue;
       const far = Math.max(awayFrom(H1, from.x, from.y), awayFrom(H2, from.x, from.y));
+      // Both pieces must stay near the wood that feeds them, and both must
+      // stay fat enough for a name to stand in.
+      const fit = Math.min(fitR(H1), fitR(H2));
       const thin = Math.max(slim(H1), slim(H2));
-      const score = far + 70 * Math.max(0, thin - 1.6);
+      const score = far + 70 * Math.max(0, thin - 1.6)
+        + FAT * Math.max(0, NEED - fit);
       if (score < bestScore) { bestScore = score; cut = [H1, H2]; }
     }
     return cut || [P, []];
   };
 
   /* ---- everything already set down, so nothing lands on it ---- */
-  const taken = [];
+
+  // Everything claimed so far, dropped into a coarse net of squares. It used
+  // to be one long list walked from end to end, which was fine while only the
+  // names were in it; now that every inch of wood claims its paper too the
+  // list is ten times as long and is asked a million questions, so it is
+  // looked up by where a thing is instead of by reading all of it.
+  const CELL = 72;
+  const bins = new Map();
+  let bigR = 0;
+  const binKey = (i, j) => i * 100003 + j;
+  const claim = (x, y, r) => {
+    const d = { x, y, r };
+    bigR = Math.max(bigR, r);
+    const k = binKey(Math.floor(x / CELL), Math.floor(y / CELL));
+    const b = bins.get(k);
+    if (b) b.push(d); else bins.set(k, [d]);
+  };
   const free = (x, y, r) => {
-    for (const d of taken) if (Math.hypot(d.x - x, d.y - y) < r + d.r + GAP) return false;
+    const reach = r + bigR + GAP;
+    const i0 = Math.floor((x - reach) / CELL), i1 = Math.floor((x + reach) / CELL);
+    const j0 = Math.floor((y - reach) / CELL), j1 = Math.floor((y + reach) / CELL);
+    for (let i = i0; i <= i1; i++) {
+      for (let j = j0; j <= j1; j++) {
+        const b = bins.get(binKey(i, j));
+        if (!b) continue;
+        for (const d of b) {
+          const dx = d.x - x, dy = d.y - y, need = r + d.r + GAP;
+          if (dx * dx + dy * dy < need * need) return false;
+        }
+      }
+    }
+    return true;
+  };
+
+  // The name circles on their own. Wood may run over wood -- that is what a
+  // tree is -- but it may never run over somebody's name.
+  const seats = [];
+
+  /**
+   * The paper one run of wood takes.
+   *
+   * Every limb claims it now, not only the long ones. A short twig used to
+   * claim nothing at all, so the next name along was free to be set down
+   * squarely on top of it -- which is most of what reads as the crown being
+   * full of collisions.
+   */
+  const lay = (ax, ay, bx, by, wood, trimA, trimB) => {
+    const r = Math.max(LIMB_MIN_W, wood) / 2;
+    const len = Math.hypot(bx - ax, by - ay);
+    if (len < 1) return;
+    const n = Math.max(1, Math.ceil(len / Math.max(6, r)));
+    for (let i = 0; i <= n; i++) {
+      const f = i / n;
+      const d = len * f;
+      if (d < (trimA || 0) || len - d < (trimB || 0)) continue;
+      claim(ax + (bx - ax) * f, ay + (by - ay) * f, r);
+    }
+  };
+
+  /** Would a run of wood from here to there cut clean through somebody's name? */
+  const clearWay = (fx, fy, tx, ty, wood, skip) => {
+    const ex = tx - fx, ey = ty - fy;
+    const ll = ex * ex + ey * ey || 1;
+    const w = Math.max(LIMB_MIN_W, wood) / 2;
+    for (const s of seats) {
+      if (s.id === skip) continue;
+      let t = ((s.x - fx) * ex + (s.y - fy) * ey) / ll;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = fx + ex * t - s.x, dy = fy + ey * t - s.y;
+      const need = s.r + w - 4;
+      if (dx * dx + dy * dy < need * need) return false;
+    }
     return true;
   };
 
@@ -300,7 +404,7 @@ export function layoutTree(tree, childrenOf, spouseOf) {
    * coming to fetch it, out of those with clear paper all round. Nearest, so
    * the branch is short -- which is the whole of the poster's look.
    */
-  const spotIn = (P, r, from, middle) => {
+  const spotIn = (P, r, from, middle, wood, skip, want) => {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const p of P) {
       x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x);
@@ -318,31 +422,59 @@ export function layoutTree(tree, childrenOf, spouseOf) {
         grid.push({ x, y, room });
       }
     }
+    /**
+     * How wrong a spot is. Not how near it is.
+     *
+     * Everybody used to be set down on the nearest free inch to the wood
+     * fetching him, so every family hugged the way into its own patch, the
+     * whole tree piled up around the bole, and the branch that had to climb
+     * out of that pile went through half a dozen names on its way. A name
+     * wants a twig's length between him and his father -- no more, but no
+     * less either, or the twig is swallowed by the two circles and he reads
+     * as floating loose in the leaves.
+     */
+    const aim = want || 0;
+    const off = (g) => {
+      const d = Math.hypot(g.x - from.x, g.y - from.y);
+      return d < aim ? (aim - d) * 2.2 : d - aim;   // too near is worse than too far
+    };
+
     // A man whose patch has to hold his whole family stands at the way into
     // it and leaves the rest of the paper to them. A man with nobody behind
     // him owns every inch of his own little patch, so he stands in the middle
     // of it -- and it is that, over all the leaves of the tree, that spreads
     // the names evenly through the head instead of letting each one hug the
     // way in and leave the far side of the crown bare.
-    for (const deep of (middle ? [0.8, 0.55, 0.3, 0] : [0])) {
-      const keep = Math.max(r + GAP, Math.min(deepest * deep, r * 2));
-      let best = null, cut = Infinity;
-      for (const g of grid) {
-        if (g.room < keep) continue;
-        if (!free(g.x, g.y, r)) continue;
-        const d = (g.x - from.x) * (g.x - from.x) + (g.y - from.y) * (g.y - from.y);
-        if (d < cut) { cut = d; best = g; }
-      }
-      if (best) return { x: best.x, y: best.y };
-    }
-    for (const keep of [r * 0.7, r * 0.4]) {
+    const pick = (keep, way) => {
       let best = null, cut = Infinity;
       for (const g of grid) {
         if (g.room < keep || !free(g.x, g.y, r)) continue;
-        const d = (g.x - from.x) * (g.x - from.x) + (g.y - from.y) * (g.y - from.y);
-        if (d < cut) { cut = d; best = g; }
+        const d = off(g);
+        if (d >= cut) continue;
+        if (way && wood && !clearWay(from.x, from.y, g.x, g.y, wood, skip)) continue;
+        cut = d; best = g;
       }
-      if (best) return { x: best.x, y: best.y };
+      return best && { x: best.x, y: best.y };
+    };
+
+    // A man whose patch has to hold his whole family stands a twig's length
+    // into it and leaves the rest of the paper to them. A man with nobody
+    // behind him owns every inch of his own little patch, so he stands in the
+    // middle of it -- and it is that, over all the leaves of the tree, that
+    // spreads the names evenly through the head instead of letting each one
+    // hug the way in and leave the far side of the crown bare.
+    for (const deep of (middle ? [0.8, 0.55, 0.3, 0] : [0])) {
+      const keep = Math.max(r + GAP, Math.min(deepest * deep, r * 2));
+      const hit = pick(keep, true);
+      if (hit) return hit;
+    }
+    // Nothing would take him with the wood able to reach him cleanly. Then
+    // let the wood run over a name rather than stand two names on the same
+    // paper: wood over a name is untidy, two names in one place cannot be
+    // read at all.
+    for (const keep of [r + GAP, r * 0.7, r * 0.4]) {
+      const hit = pick(keep, false);
+      if (hit) return hit;
     }
     // Nothing in the patch would take him with room to spare: then the
     // nearest scrap of it that nobody is standing on, and only after that the
@@ -399,19 +531,44 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const w0 = Math.max(wood, on.w || wood);
     const dx = x - sx, dy = y - sy;
     const len = Math.hypot(dx, dy);
-    if (len <= STRIDE * 1.35) return on;
+    // A short reach is one plain piece of wood, but it still takes its paper.
+    if (len <= STRIDE * 1.35) { lay(sx, sy, x, y, wood, on.r || 0, 0); return on; }
     const steps = Math.max(1, Math.round(len / STRIDE));
     const nx = -dy / len, ny = dx / len;
+    // One side, one bow, for the whole climb. A fresh throw of the dice at
+    // every footfall is what turned a long bough into a row of kinks -- it
+    // wound its way up instead of growing.
+    const side = (sway(sid) - 0.5) * 2;
+    const bowAt = (amp, t) => Math.sin(t * Math.PI) * amp;
+    // How bad a given bow is: the bough must stay in its own patch, and it
+    // must not lie across anybody's name. The bow used to be thrown by the
+    // dice and never looked at again, so half the boughs in the crown leaned
+    // straight onto a circle that had been set down long before.
+    const bowBad = (amp) => {
+      let bad = 0;
+      for (let k = 0; k <= 20; k++) {
+        const t = k / 20;
+        const px = sx + dx * t + nx * bowAt(amp, t);
+        const py = sy + dy * t + ny * bowAt(amp, t);
+        if (P && roomAt(P, px, py) < wood / 3) bad += 3;
+        for (const s of seats) {
+          if (s.id === sid) continue;
+          const ex = s.x - px, ey = s.y - py, need = s.r + Math.max(LIMB_MIN_W, wood) / 2 - 4;
+          if (ex * ex + ey * ey < need * need) { bad += 10; break; }
+        }
+      }
+      return bad;
+    };
+    const full = Math.min(44, len * 0.11) * side;
+    let amp = full, bad = Infinity;
+    for (const cand of [full, full * 0.5, 0, -full * 0.5, -full, full * 1.7, -full * 1.7]) {
+      const b = bowBad(cand);
+      if (b < bad) { bad = b; amp = cand; if (!b) break; }
+    }
     for (let i = 1; i < steps; i++) {
       const t = i / steps;
       const bx = sx + dx * t, by = sy + dy * t;
-      // a shallow lean, heaviest in the middle of the run, so the climb bends
-      let lean = Math.sin(t * Math.PI) * Math.min(64, len * 0.16)
-        * (sway(`${sid}~${i}`) - 0.5) * 2;
-      // and never so far that the bough leans out of its own patch
-      while (lean && P && roomAt(P, bx + nx * lean, by + ny * lean) < wood / 3) {
-        lean = Math.abs(lean) < 4 ? 0 : lean * 0.5;
-      }
+      const lean = bowAt(amp, t);
       const px = bx + nx * lean, py = by + ny * lean;
       const jid = `#j${jn++}`;
       const back = on;
@@ -422,16 +579,10 @@ export function layoutTree(tree, childrenOf, spouseOf) {
         w: w0 + (wood - w0) * t,
       });
       edges.push({ from: back.id, to: jid });
-      // the whole run of wood takes paper, not just the joints on it: a name
-      // dropped between two footfalls used to land squarely on the bough
-      for (let f = 0; f <= 1; f += 0.25) {
-        taken.push({
-          x: back.x + (px - back.x) * f, y: back.y + (py - back.y) * f,
-          r: Math.max(LIMB_MIN_W, wood) / 2,
-        });
-      }
+      lay(back.x, back.y, px, py, wood, i === 1 ? (back.r || 0) : 0, 0);
       on = nodes.get(jid);
     }
+    lay(on.x, on.y, x, y, wood, 0, 0);          // the last footfall to the spot
     return on;
   };
 
@@ -453,11 +604,58 @@ export function layoutTree(tree, childrenOf, spouseOf) {
    * can cross nothing, and the one thing a straight run at the far side would
    * do is cut clean through the brother's patch lying between.
    */
-  const walk = (stem, x, y, wood, P) => {
+  /** A bare fork set down on purpose, wherever the wood has to turn. */
+  const knee = (on, x, y, wood) => {
+    const jid = `#j${jn++}`;
+    nodes.set(jid, {
+      id: jid, person: null, isJoint: true, depth: on.depth,
+      x, y, angle: Math.atan2(on.y - y, x - on.x), r: 0,
+      w: Math.max(wood, on.w || wood),
+    });
+    edges.push({ from: on.id, to: jid });
+    lay(on.x, on.y, x, y, wood, on.r || 0, 0);
+    claim(x, y, LIMB_MIN_W / 2);
+    return nodes.get(jid);
+  };
+
+  /**
+   * Somewhere to turn, when the straight run would go through a name.
+   *
+   * A name already set down cannot be moved -- his own family is standing
+   * around him by now -- so it is the wood that gives way. A real branch does
+   * the same: it goes round what is in its road and the bend is the most
+   * natural thing on the tree. One knee is enough for anything the crown
+   * throws up; if no knee will do it, the wood goes straight and runs over
+   * the name, which is still better than two names on one spot.
+   */
+  const dodge = (on, x, y, wood, P, skip) => {
+    const dx = x - on.x, dy = y - on.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    for (const f of [0.45, 0.62, 0.3]) {
+      for (const a of [26, -26, 46, -46, 72, -72, 100, -100]) {
+        const px = on.x + dx * f + nx * a, py = on.y + dy * f + ny * a;
+        if (P && P.length > 2 && roomAt(P, px, py) < wood / 3) continue;
+        if (!clearWay(on.x, on.y, px, py, wood, skip)) continue;
+        if (!clearWay(px, py, x, y, wood, skip)) continue;
+        return { x: px, y: py };
+      }
+    }
+    return null;
+  };
+
+  const walk = (stem, x, y, wood, P, skip) => {
     let on = stem;
     if (P && P.length > 2 && roomAt(P, on.x, on.y) < 0) {
       const door = doorOf(P, on.x, on.y);
       on = stride(on, door.x, door.y, wood, null);
+    }
+    if (!clearWay(on.x, on.y, x, y, wood, skip)) {
+      const turn = dodge(on, x, y, wood, P, skip);
+      if (turn) {
+        on = stride(on, turn.x, turn.y, wood, P);
+        on = knee(on, turn.x, turn.y, wood);
+      }
     }
     return stride(on, x, y, wood, P);
   };
@@ -466,7 +664,8 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     const f = face.get(id);
     const r = f.disc;
     const at = known || spotIn(P, r, from, !(kin.get(id) || []).length);
-    taken.push({ x: at.x, y: at.y, r });
+    claim(at.x, at.y, r);
+    seats.push({ id, x: at.x, y: at.y, r });
     nodes.set(id, {
       id, person: tree.people[id], depth: deep.get(id), x: at.x, y: at.y,
       // He faces the way the wood came to him: that is what bends a branch.
@@ -506,10 +705,11 @@ export function layoutTree(tree, childrenOf, spouseOf) {
       const wood = woodOf(mass);
       // A fork needs no room of its own: it is a place where wood splits,
       // and it wants to sit as near the wood that feeds it as it can.
-      const at = spotIn(patch, LIMB_MIN_W / 2, stem);
-      const on = walk(stem, at.x, at.y, wood, patch);
+      const at = spotIn(patch, LIMB_MIN_W / 2, stem, false, wood, stem.id,
+        (stem.r || 0) + wood * 0.5 + 18);
+      const on = walk(stem, at.x, at.y, wood, patch, stem.id);
       const jid = `#j${jn++}`;
-      taken.push({ x: at.x, y: at.y, r: LIMB_MIN_W / 2 });
+      claim(at.x, at.y, LIMB_MIN_W / 2);
       nodes.set(jid, {
         id: jid, person: null, isJoint: true, depth: stem.depth,
         x: at.x, y: at.y,
@@ -526,8 +726,12 @@ export function layoutTree(tree, childrenOf, spouseOf) {
     // A wife stands beside her husband, never off in the middle of the paper
     // her family was given: the wood that marries them is a short branch off
     // him, and it has to read that way.
-    const at = spotIn(P, r, stem, !u.wife && !(kin.get(u.id) || []).length);
-    const on = walk(stem, at.x, at.y, woodOf(massOf(stem.id, u)), P);
+    const wood = woodOf(massOf(stem.id, u));
+    // A wife stands close in; a son is given a twig's length of his own.
+    const step = (stem.r || 0) + r + (u.wife ? 16 : 34);
+    const at = spotIn(P, r, stem, !u.wife && !(kin.get(u.id) || []).length,
+      wood, stem.id, step);
+    const on = walk(stem, at.x, at.y, wood, P, stem.id);
     if (u.wife) marriages.push({ a: on.id, b: u.id });
     else edges.push({ from: on.id, to: u.id });
     seat(u.id, P, on, at);
